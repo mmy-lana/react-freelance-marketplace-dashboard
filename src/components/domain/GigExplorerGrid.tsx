@@ -16,6 +16,8 @@ export interface GigExplorerGridProps {
   isLoading?: boolean;
   /** Opens a gig workspace instead of toggling selection when supplied. */
   onSelectGig?: (gig: GigItem) => void;
+  /** Hides seller identity blocks while browsing in buyer mode. */
+  compactSeller?: boolean;
   className?: string;
 }
 
@@ -24,10 +26,16 @@ export interface GigExplorerGridProps {
  *
  * Search is throttled through the context's debounced query, categories form a
  * horizontally scrollable pill ribbon, and the filter surface switches from a
- * desktop sidebar to a mobile drawer at the layout breakpoint.
+ * mobile drawer to a side menu between 768px and 1024px, then a full sidebar.
  */
-export function GigExplorerGrid({ isLoading = false, onSelectGig, className }: GigExplorerGridProps): React.JSX.Element {
-  const { gigs, filteredGigs, filters, setFilters, resetFilters, categoryCounts } = useMarketplace();
+export function GigExplorerGrid({
+  isLoading = false,
+  onSelectGig,
+  compactSeller = false,
+  className,
+}: GigExplorerGridProps): React.JSX.Element {
+  const { gigs, filteredGigs, filters, setFilters, resetFilters, categoryCounts, currentUser, toggleGigStatus } =
+    useMarketplace();
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [isCreationOpen, setIsCreationOpen] = useState(false);
   const [selectedGigIds, setSelectedGigIds] = useState<string[]>([]);
@@ -190,9 +198,13 @@ export function GigExplorerGrid({ isLoading = false, onSelectGig, className }: G
                 <GigCard
                   key={gig.id}
                   gig={gig}
+                  compactSeller={compactSeller}
                   isSelected={selectedGigIds.includes(gig.id)}
                   onToggleSelect={onSelectGig ? undefined : toggleSelected}
                   onSelect={onSelectGig}
+                  onToggleStatus={
+                    gig.sellerId === currentUser.id ? (target) => toggleGigStatus(target.id) : undefined
+                  }
                   testId={`explorer-gig-${gig.id}`}
                 />
               ))}

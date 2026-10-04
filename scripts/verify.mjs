@@ -11,7 +11,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import puppeteer from 'puppeteer-core';
@@ -186,6 +186,71 @@ const PHASE_ASSERTIONS = {
       { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 13, description: 'new gig added to the grid' },
       { type: 'assertNoSelector', selector: '[data-gig-id^="gig-optimistic-"]', description: 'optimistic id replaced by the persisted id' },
       { type: 'assertNoSelector', selector: '[data-testid="gig-creation-drawer"]', description: 'creation drawer closed after publish' },
+    ],
+  },
+  5: {
+    checks: [
+      { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
+      { selector: '[data-testid="app-header"]', description: 'Header rendered' },
+      { selector: '[data-testid="main-content"][data-active-view="explorer"]', description: 'Explorer is the default view' },
+      { selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'Explorer grid rendered' },
+      { text: 'Gig Explorer', description: 'Explorer heading visible' },
+    ],
+    actions: [
+      { type: 'assertPaddingBottom', selector: '[data-testid="main-content"]', minPadding: 80, description: 'content clears the fixed bottom navigation', maxWidth: 767 },
+      { type: 'assertBox', selector: '[data-testid="mobile-nav"]', minHeight: 56, maxHeight: 57, description: 'mobile nav matches --nav-bottom-height', maxWidth: 767 },
+      { type: 'assertGridColumns', selector: '[data-testid="explorer-grid"]', minColumns: 1, maxColumns: 1, description: 'single column grid on small phones', maxWidth: 430 },
+      { type: 'assertGridColumns', selector: '[data-testid="explorer-grid"]', minColumns: 2, maxColumns: 2, description: 'two column grid on tablet', minWidth: 768, maxWidth: 1023 },
+      { type: 'assertGridColumns', selector: '[data-testid="explorer-grid"]', minColumns: 3, maxColumns: 3, description: 'three column grid on desktop', minWidth: 1024 },
+      { type: 'click', selector: '[data-testid="gig-toggle-gig-seo-authority"]', description: 'pause own listing' },
+      { type: 'assertCount', selector: '[data-gig-id="gig-seo-authority"] [data-testid="gig-status-paused"]', minCount: 1, description: 'listing shows the paused badge' },
+      { type: 'click', selector: '[data-testid="gig-toggle-gig-seo-authority"]', description: 'resume own listing' },
+      { type: 'assertCount', selector: '[data-gig-id="gig-seo-authority"] [data-testid="gig-status-active"]', minCount: 1, description: 'listing is active again' },
+      { type: 'click', selector: '[data-testid="notifications-button"]', description: 'open notifications' },
+      { type: 'assertVisible', selector: '[data-testid="notifications-popover"]', description: 'notifications popover opened' },
+      { type: 'assertCount', selector: '[data-testid="notification-item"]', minCount: 5, description: 'seeded notifications listed' },
+      { type: 'click', selector: '[data-testid="notifications-mark-read"]', description: 'mark all as read' },
+      { type: 'assertNoSelector', selector: '[data-testid="notifications-count"]', description: 'unread badge cleared' },
+      { type: 'press', key: 'Escape', description: 'dismiss the popover with Escape' },
+      { type: 'waitForHidden', selector: '[data-testid="notifications-popover"]', description: 'popover closed' },
+      { type: 'click', selector: '[data-testid="mode-buyer"]', description: 'switch to buyer mode', minWidth: 640 },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="buyer"]', description: 'buyer mode applied', minWidth: 640 },
+      { type: 'click', selector: '[data-testid="mode-seller"]', description: 'switch back to seller mode', minWidth: 640 },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="seller"]', description: 'seller mode restored', minWidth: 640 },
+      { type: 'type', selector: '[data-testid="header-search"]', value: 'video', description: 'header search query', minWidth: 1024 },
+      { type: 'wait', ms: 450, description: 'wait for the debounce' },
+      { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 1, maxCount: 4, description: 'header search narrowed the grid', minWidth: 1024 },
+      { type: 'click', selector: '[aria-label="Clear search query"]', description: 'clear the header search', minWidth: 1024 },
+      { type: 'wait', ms: 450, description: 'wait for the debounce', minWidth: 1024 },
+      { type: 'click', selector: '[data-testid="mobile-nav-orders"]', description: 'navigate to orders (mobile nav)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-active-view="orders"]', description: 'orders view active (mobile)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="order-queue"]', description: 'order queue rendered (mobile)', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="nav-orders"]', description: 'navigate to orders (desktop nav)', minWidth: 768 },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-active-view="orders"]', description: 'orders view active (desktop)', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="order-queue"] tbody tr', minCount: 5, description: 'full order ledger rows on desktop', minWidth: 1024 },
+      { type: 'click', selector: '[data-testid="mobile-nav-earnings"]', description: 'navigate to earnings (mobile nav)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="earnings-view"]', description: 'earnings view active (mobile)', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="nav-earnings"]', description: 'navigate to earnings (desktop nav)', minWidth: 768 },
+      { type: 'assertVisible', selector: '[data-testid="earnings-view"]', description: 'earnings view active (desktop)', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="earnings-balances"] article', minCount: 3, description: 'three balance tiles' },
+      { type: 'assertCount', selector: '[data-testid="ledger-table-body"] tr', minCount: 6, description: 'ledger rows on desktop', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="ledger-card-list"] li', minCount: 6, description: 'ledger cards on mobile', maxWidth: 767 },
+      { type: 'expectDownload', selector: '[data-testid="earnings-export-csv"]', description: 'CSV ledger export' },
+      { type: 'click', selector: '[data-testid="mobile-nav-profile"]', description: 'navigate to profile (mobile nav)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="profile-view"]', description: 'profile view active (mobile)', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="nav-profile"]', description: 'navigate to profile (desktop nav)', minWidth: 768 },
+      { type: 'assertVisible', selector: '[data-testid="profile-view"]', description: 'profile view active (desktop)', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="storage-report-item"]', minCount: 5, description: 'storage integrity report rendered' },
+      { type: 'assertVisible', selector: '[data-testid="profile-identity"]', description: 'seller identity card rendered' },
+      { type: 'click', selector: '[data-testid="profile-reset-data"]', description: 'reset the demo dataset' },
+      { type: 'assertVisible', selector: '[data-testid="toast"]', description: 'reset confirmation toast' },
+      { type: 'click', selector: '[data-testid="nav-dashboard"]', description: 'navigate to the seller dashboard', minWidth: 768 },
+      { type: 'assertVisible', selector: '[data-testid="seller-dashboard"]', description: 'seller dashboard active (desktop)', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="seller-metric-grid"] [data-trend]', minCount: 4, description: 'four dashboard KPI tiles', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="mobile-nav-explorer"]', description: 'back to explorer (mobile nav)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-active-view="explorer"]', description: 'explorer restored (mobile)', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="nav-explorer"]', description: 'back to explorer (desktop nav)', minWidth: 768 },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-active-view="explorer"]', description: 'explorer restored (desktop)', minWidth: 768 },
     ],
   },
 };
@@ -459,6 +524,70 @@ async function run() {
             }
             case 'wait': {
               await new Promise((resolve) => setTimeout(resolve, action.ms ?? 200));
+              break;
+            }
+            case 'assertBox': {
+              const box = await page.$eval(action.selector, (node) => node.getBoundingClientRect().height);
+              if (typeof action.minHeight === 'number' && box < action.minHeight - 0.5) {
+                recordFailure(scope, `"${action.selector}" height ${box.toFixed(1)} below ${action.minHeight} (${action.description})`);
+              }
+              if (typeof action.maxHeight === 'number' && box > action.maxHeight + 0.5) {
+                recordFailure(scope, `"${action.selector}" height ${box.toFixed(1)} above ${action.maxHeight} (${action.description})`);
+              }
+              break;
+            }
+            case 'assertPaddingBottom': {
+              const padding = await page.$eval(action.selector, (node) => window.getComputedStyle(node).paddingBottom);
+              const value = Number.parseFloat(padding);
+              if (Number.isFinite(value) && value < (action.minPadding ?? 0)) {
+                recordFailure(
+                  scope,
+                  `"${action.selector}" padding-bottom ${value}px below ${action.minPadding}px (${action.description})`
+                );
+              }
+              break;
+            }
+            case 'assertGridColumns': {
+              const columns = await page.$eval(action.selector, (node) =>
+                window.getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length
+              );
+              if (typeof action.minColumns === 'number' && columns < action.minColumns) {
+                recordFailure(
+                  scope,
+                  `"${action.selector}" renders ${columns} columns, expected >= ${action.minColumns} (${action.description})`
+                );
+              }
+              if (typeof action.maxColumns === 'number' && columns > action.maxColumns) {
+                recordFailure(
+                  scope,
+                  `"${action.selector}" renders ${columns} columns, expected <= ${action.maxColumns} (${action.description})`
+                );
+              }
+              break;
+            }
+            case 'expectDownload': {
+              const directory = path.join(OUTPUT_DIR, 'downloads');
+              await mkdir(directory, { recursive: true });
+              const session = await page.createCDPSession();
+              await session.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: directory });
+              await waitForVisible(page, action.selector);
+              const element = await firstVisibleElement(page, action.selector);
+              if (element === null) {
+                throw new Error(`no visible element matches "${action.selector}"`);
+              }
+              await clickElement(element);
+              const deadline = Date.now() + 8000;
+              let files = [];
+              while (Date.now() < deadline) {
+                files = (await readdir(directory)).filter((name) => name.endsWith(action.extension ?? '.csv'));
+                if (files.length > 0) {
+                  break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 200));
+              }
+              if (files.length === 0) {
+                recordFailure(scope, `expected a ${action.extension ?? '.csv'} download (${action.description})`);
+              }
               break;
             }
             case 'assertNoSelector': {

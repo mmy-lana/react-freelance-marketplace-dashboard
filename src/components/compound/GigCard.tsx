@@ -39,7 +39,7 @@ export function GigCard({
   const [imageIndex, setImageIndex] = useState(0);
   const images = gig.images.length > 0 ? gig.images : [gig.thumbnailUrl];
   const currentImage = images[Math.min(imageIndex, images.length - 1)] ?? gig.thumbnailUrl;
-  const isMine = gig.sellerId === gig.seller.id;
+  const showSellerDetails = !compactSeller;
 
   const step = (delta: number): void => {
     setImageIndex((previous) => (previous + delta + images.length) % images.length);
@@ -160,7 +160,7 @@ export function GigCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
-        {!compactSeller ? (
+        {showSellerDetails ? (
           <div className="flex items-center gap-2.5">
             <Avatar src={gig.seller.avatarUrl} name={gig.seller.displayName} size="sm" level={gig.seller.level} />
             <div className="min-w-0 flex-1">
@@ -184,19 +184,23 @@ export function GigCard({
             <span className="font-medium text-slate-200">{gig.rating.toFixed(2)}</span>
             <span className="tabular">({gig.reviewCount.toLocaleString('en-US')})</span>
           </span>
-          {isMine ? (
+          {showSellerDetails ? (
             <span className="inline-flex items-center gap-1">
               <Users aria-hidden="true" className="size-3.5" />
               <span className="tabular">{gig.ordersInQueueCount} in queue</span>
             </span>
           ) : null}
-          {gig.status === 'paused' && onToggleStatus ? (
+          {onToggleStatus ? (
             <button
               type="button"
               onClick={handleToggleStatus}
-              className="inline-flex min-h-[44px] items-center rounded-lg px-2 font-semibold text-emerald-300 hover:bg-emerald-500/10"
+              data-testid={`gig-toggle-${gig.id}`}
+              className={cn(
+                'inline-flex min-h-[44px] items-center rounded-lg px-2 font-semibold transition-colors',
+                gig.status === 'active' ? 'text-slate-400 hover:text-amber-300' : 'text-emerald-300 hover:bg-emerald-500/10'
+              )}
             >
-              Resume listing
+              {gig.status === 'active' ? 'Pause listing' : 'Resume listing'}
             </button>
           ) : null}
         </div>

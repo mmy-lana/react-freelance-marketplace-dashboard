@@ -1,71 +1,88 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { EarningsBreakdownView } from './components/domain/EarningsBreakdownView';
 import { GigExplorerGrid } from './components/domain/GigExplorerGrid';
+import { OrderManagementQueue } from './components/domain/OrderManagementQueue';
 import { SellerDashboardView } from './components/domain/SellerDashboardView';
-import { Tabs, type TabItem } from './components/primitives/Tabs';
-import { Badge } from './components/primitives/Badge';
+import { SellerProfileView } from './components/domain/SellerProfileView';
+import { AppHeader } from './components/shell/AppHeader';
+import { MobileNav } from './components/shell/MobileNav';
 import { MarketplaceProvider, useMarketplace } from './context/MarketplaceContext';
 import { ToastProvider } from './context/ToastContext';
+import type { AppView } from './types/marketplace';
+import { cn } from './utils/cn';
 
-type WorkspaceTab = 'explorer' | 'dashboard';
-
-const WORKSPACE_TABS: TabItem<WorkspaceTab>[] = [
-  { id: 'explorer', label: 'Gig Explorer' },
-  { id: 'dashboard', label: 'Seller Dashboard' },
-];
+const VIEW_TITLES: Record<AppView, { title: string; subtitle: string }> = {
+  explorer: {
+    title: 'Gig Explorer',
+    subtitle: 'Search, facet and compare every listing on the marketplace.',
+  },
+  dashboard: {
+    title: 'Seller Management',
+    subtitle: 'Performance, tier progression and the live order workflow.',
+  },
+  orders: {
+    title: 'Order Management',
+    subtitle: 'Move orders through requirements, delivery and revisions.',
+  },
+  earnings: {
+    title: 'Earnings & Finances',
+    subtitle: 'Balances, clearance schedule and the transaction ledger.',
+  },
+  profile: {
+    title: 'Seller Profile',
+    subtitle: 'Your public reputation, listings and local data integrity.',
+  },
+};
 
 function Workspace(): React.JSX.Element {
-  const { orders, gigs, hydrationSource, unreadNotificationCount } = useMarketplace();
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('explorer');
+  const { sellerMode } = useMarketplace();
+  const [activeView, setActiveView] = useState<AppView>('explorer');
+
+  const navigate = useCallback((view: AppView) => {
+    setActiveView(view);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const heading = VIEW_TITLES[activeView];
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100" data-testid="app-shell">
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-500 text-lg font-bold text-slate-950">
-              F
-            </span>
-            <span className="text-lg font-bold tracking-tight text-white">GigHub</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="brand" testId="phase-badge">
-              Phase 4 · Domain Logic
-            </Badge>
-            <Badge tone="neutral" size="md" testId="hydration-badge">
-              storage: {hydrationSource}
-            </Badge>
-            <Badge tone={unreadNotificationCount > 0 ? 'warning' : 'neutral'} size="md">
-              {unreadNotificationCount} unread
-            </Badge>
-          </div>
+    <div className="flex min-h-screen flex-col bg-slate-900 text-slate-100" data-testid="app-shell">
+      <AppHeader activeView={activeView} onNavigate={navigate} />
+
+      <main
+        data-testid="main-content"
+        data-active-view={activeView}
+        data-seller-mode={sellerMode}
+        className={cn(
+          'mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6',
+          // Reserve the fixed mobile navigation height plus breathing room.
+          'pb-[calc(var(--nav-bottom-height)+24px)] md:pb-10'
+        )}
+      >
+        <div className="mb-5">
+          <h1 className="text-xl font-bold text-white sm:text-2xl">{heading.title}</h1>
+          <p className="mt-1 text-sm text-slate-400">{heading.subtitle}</p>
         </div>
-      </header>
 
-      <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 pb-[calc(var(--nav-bottom-height)+24px)] sm:px-6">
-        <Tabs
-          items={WORKSPACE_TABS}
-          activeId={activeTab}
-          onChange={setActiveTab}
-          ariaLabel="Workspace"
-          testId="workspace-tabs"
-        />
-
-        <p className="text-xs text-slate-500" data-testid="dataset-summary">
-          {gigs.length} gigs · {orders.length} orders loaded
-        </p>
-
-        {activeTab === 'explorer' ? <GigExplorerGrid /> : <SellerDashboardView />}
+        {activeView === 'explorer' ? (
+          <GigExplorerGrid compactSeller={sellerMode === 'buyer'} />
+        ) : null}
+        {activeView === 'dashboard' ? <SellerDashboardView /> : null}
+        {activeView === 'orders' ? (
+          <div className="rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5">
+            <OrderManagementQueue title="All orders" />
+          </div>
+        ) : null}
+        {activeView === 'earnings' ? <EarningsBreakdownView /> : null}
+        {activeView === 'profile' ? <SellerProfileView /> : null}
       </main>
 
-      <div aria-hidden="true" className="h-[var(--nav-bottom-height)]" />
+      <MobileNav activeView={activeView} onNavigate={navigate} />
     </div>
   );
 }
 
-/**
- * Phase 4 composition: providers wrap a two-tab workspace so the reactive
- * domain layer can be exercised end to end.
- */
+/** Application root: providers wrap the responsive marketplace shell. */
 export default function App(): React.JSX.Element {
   return (
     <ToastProvider>

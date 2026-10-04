@@ -292,8 +292,6 @@ export function FilterSlideOver({
   );
 }
 
-export { FilterBody as FilterPanel };
-
 /** Human readable summary of the active filters, used by the explorer header. */
 export function describeFilters(filters: GigFilterState): string[] {
   const chips: string[] = [];
