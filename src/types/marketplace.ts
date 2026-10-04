@@ -178,3 +178,122 @@ export interface SellerMetricBreakdown {
   profileVisitsCount: number;
   conversionRatePercent: number;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Display metadata                                                            */
+/* -------------------------------------------------------------------------- */
+
+export const GIG_CATEGORIES = [
+  'Graphics & Design',
+  'Digital Marketing',
+  'Writing & Translation',
+  'Video & Animation',
+  'Music & Audio',
+  'Programming & Tech',
+  'AI Services',
+] as const satisfies readonly GigCategory[];
+
+export const SELLER_LEVELS = ['new_seller', 'level_one', 'level_two', 'top_rated'] as const satisfies readonly SellerLevel[];
+
+export const ORDER_STATUSES = [
+  'pending_requirements',
+  'in_progress',
+  'delivered',
+  'revision',
+  'completed',
+  'cancelled',
+] as const satisfies readonly OrderStatus[];
+
+export const PACKAGE_TIERS = ['basic', 'standard', 'premium'] as const satisfies readonly PackageTier[];
+
+export const SELLER_LEVEL_LABELS: Record<SellerLevel, string> = {
+  new_seller: 'New Seller',
+  level_one: 'Level 1',
+  level_two: 'Level 2',
+  top_rated: 'Top Rated',
+};
+
+export const SELLER_LEVEL_DESCRIPTIONS: Record<SellerLevel, string> = {
+  new_seller: 'Building a track record',
+  level_one: 'Rising seller',
+  level_two: 'Established seller',
+  top_rated: 'Highest tier seller',
+};
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending_requirements: 'Pending Requirements',
+  in_progress: 'In Progress',
+  delivered: 'Delivered',
+  revision: 'Revision Requested',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+export const PACKAGE_TIER_LABELS: Record<PackageTier, string> = {
+  basic: 'Basic',
+  standard: 'Standard',
+  premium: 'Premium',
+};
+
+export const GIG_STATUS_LABELS: Record<GigItem['status'], string> = {
+  active: 'Active',
+  paused: 'Paused',
+  deleted: 'Deleted',
+};
+
+/** Ordered lifecycle stages rendered by the order timeline tracker. */
+export const ORDER_TIMELINE_STAGES = [
+  'pending_requirements',
+  'in_progress',
+  'delivered',
+  'completed',
+] as const satisfies readonly OrderStatus[];
+
+export type OrderTimelineStage = (typeof ORDER_TIMELINE_STAGES)[number];
+
+/* -------------------------------------------------------------------------- */
+/* Supporting domain records                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type LedgerEntryStatus = 'available' | 'pending_clearance' | 'paid_out' | 'refunded';
+
+export interface LedgerEntry {
+  id: string;
+  orderNumber: string;
+  gigTitle: string;
+  grossCents: number;
+  feeCents: number;
+  netCents: number;
+  createdAt: string;
+  availableAt: string;
+  status: LedgerEntryStatus;
+  method: string;
+}
+
+/** A single plotted sample used by metric sparklines. */
+export interface MetricSeriesPoint {
+  label: string;
+  value: number;
+}
+
+export type NotificationKind = 'order' | 'revision' | 'payout' | 'system';
+
+export interface NotificationItem {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  createdAt: string;
+  isRead: boolean;
+}
+
+export type SellerMode = 'seller' | 'buyer';
+
+export type AppView = 'explorer' | 'dashboard' | 'orders' | 'earnings' | 'profile';
+
+/** Result envelope returned by every asynchronous marketplace mutation. */
+export interface MutationResult<T> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+}

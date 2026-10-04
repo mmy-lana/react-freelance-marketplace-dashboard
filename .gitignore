@@ -6,3 +6,6 @@ dist-ssr
 .DS_Store
 pnpm-debug.log*
 repomix-output.xml
+.verify
+.pnpm-store
+*.tsbuildinfo
