@@ -47,7 +47,7 @@ export function OrderCardItem({
         className
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <img
             src={order.gigThumbnailUrl}
@@ -56,11 +56,12 @@ export function OrderCardItem({
             decoding="async"
             className="size-12 shrink-0 rounded-xl border border-slate-700 object-cover"
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <button
               type="button"
               onClick={() => onOpen?.(order)}
-              className="block min-h-[44px] w-full text-left"
+              data-testid={`order-open-${order.id}`}
+              className="block min-h-[44px] w-full min-w-0 text-left"
             >
               <span className="tabular block text-[11px] font-semibold tracking-wide text-slate-400">
                 {order.orderNumber}
@@ -69,7 +70,9 @@ export function OrderCardItem({
             </button>
           </div>
         </div>
-        <CountdownClock dueDateIsoString={order.dueDate} status={order.status} size="sm" hideLabel />
+        <div className="shrink-0 self-start sm:ml-auto">
+          <CountdownClock dueDateIsoString={order.dueDate} status={order.status} size="sm" hideLabel />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -107,6 +110,7 @@ export function OrderCardItem({
         <button
           type="button"
           onClick={() => onTransition?.(order.id, transition.status)}
+          data-testid={`order-action-${order.id}`}
           className={cn(
             'inline-flex min-h-[48px] items-center justify-center gap-1 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-slate-950 transition-colors hover:bg-emerald-400',
             fullWidthAction && 'w-full'

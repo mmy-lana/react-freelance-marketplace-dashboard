@@ -56,6 +56,7 @@ export function OrderRowItem({ order, onTransition, onOpen, isActive = false, cl
         <button
           type="button"
           onClick={() => onOpen?.(order)}
+          data-testid={`order-open-${order.id}`}
           className="flex min-h-[44px] w-full min-w-[200px] items-center gap-3 rounded-lg text-left"
         >
           <img
@@ -124,6 +125,7 @@ export function OrderRowItem({ order, onTransition, onOpen, isActive = false, cl
             <button
               type="button"
               onClick={() => onTransition?.(order.id, transition.status)}
+              data-testid={`order-action-${order.id}`}
               className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-emerald-500/40 px-3 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/10"
             >
               {transition.label}

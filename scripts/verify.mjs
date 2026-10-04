@@ -119,6 +119,75 @@ const PHASE_ASSERTIONS = {
       { type: 'assertCount', selector: '[data-testid="order-card-list"] article', minCount: 3, description: 'mobile order cards', maxWidth: 767 },
     ],
   },
+  4: {
+    checks: [
+      { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
+      { selector: '[data-testid="gig-explorer"]', description: 'Gig explorer rendered' },
+      { selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'Seed gigs rendered' },
+      { selector: '[data-testid^="category-pill-"]', minCount: 8, description: 'Category ribbon rendered' },
+      { selector: '[data-testid="explorer-search"]', description: 'Search field rendered' },
+      { text: 'Phase 4', description: 'Phase badge visible' },
+    ],
+    actions: [
+      { type: 'assertText', selector: '[data-testid="explorer-result-count"]', value: '12', description: 'all 12 seed gigs visible' },
+      { type: 'type', selector: '[data-testid="explorer-search"]', value: 'design', description: 'type a search query' },
+      { type: 'wait', ms: 450, description: 'wait for the 300ms debounce' },
+      { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', maxCount: 11, minCount: 1, description: 'debounced search narrowed the grid' },
+      { type: 'click', selector: '[aria-label="Clear search query"]', description: 'clear the search' },
+      { type: 'wait', ms: 450, description: 'wait for the debounce to settle' },
+      { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'grid restored after clearing' },
+      { type: 'click', selector: '[data-testid="category-pill-Music & Audio"]', description: 'filter by a single category' },
+      { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 1, maxCount: 1, description: 'category facet applied' },
+      { type: 'click', selector: '[data-testid="category-pill-All"]', description: 'reset category facet' },
+      { type: 'type', selector: '[data-testid="explorer-search"]', value: 'zzzznotfound', description: 'search with no matches' },
+      { type: 'wait', ms: 450, description: 'wait for the debounce' },
+      { type: 'assertVisible', selector: '[data-testid="explorer-empty-state"]', description: 'empty state rendered' },
+      { type: 'click', selector: '[data-testid="explorer-reset-filters"]', description: 'reset filters from the empty state' },
+      { type: 'wait', ms: 450, description: 'wait for the debounce after reset' },
+      { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'filters reset restored every gig' },
+      { type: 'click', selector: '[data-testid="explorer-open-filters"]', description: 'open the mobile filter drawer', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="explorer-filter-drawer"] [data-testid="filter-drawer-panel"]', description: 'filter drawer visible', maxWidth: 767 },
+      { type: 'select', selector: '[data-testid="explorer-filter-drawer"] [data-testid="filter-delivery"]', value: '7', description: 'delivery facet', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="filter-apply"]', description: 'apply drawer filters', maxWidth: 767 },
+      { type: 'waitForHidden', selector: '[data-testid="explorer-filter-drawer"] [data-testid="filter-drawer-panel"]', description: 'drawer closed', maxWidth: 767 },
+      { type: 'click', selector: '[role="tab"][id="tab-dashboard"]', description: 'open the seller dashboard' },
+      { type: 'assertVisible', selector: '[data-testid="seller-dashboard"]', description: 'seller dashboard rendered' },
+      { type: 'assertCount', selector: '[data-testid="seller-metric-grid"] [data-trend]', minCount: 4, description: 'four KPI tiles' },
+      { type: 'assertCount', selector: '[data-testid="progression-requirements"] [data-testid="progression-requirement"]', minCount: 6, description: 'six tier requirements' },
+      { type: 'assertDisabled', selector: '[data-testid="promote-seller"]', description: 'promotion blocked while requirements are unmet' },
+      { type: 'assertCount', selector: '[data-testid="order-queue"] tbody tr', minCount: 3, description: 'seller order rows', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="order-queue"] .md\\:hidden article', minCount: 3, description: 'seller order cards', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="order-open-order-001"]', description: 'open the order workspace' },
+      { type: 'assertVisible', selector: '[data-testid="order-detail-panel"]', description: 'order detail panel opened' },
+      { type: 'click', selector: '[data-testid="order-detail-close"]', description: 'close the order workspace' },
+      { type: 'click', selector: '[data-testid="order-action-order-001"]', description: 'open the delivery dialog' },
+      { type: 'assertVisible', selector: '[data-testid="delivery-modal"]', description: 'delivery dialog opened' },
+      { type: 'click', selector: '[data-testid="delivery-submit"]', description: 'attempt delivery without files' },
+      { type: 'assertVisible', selector: '[data-testid="delivery-error"]', description: 'delivery validation surfaced an error' },
+      { type: 'click', selector: '[data-testid="delivery-cancel"]', description: 'close the delivery dialog' },
+      { type: 'assertCount', selector: '[data-testid="order-queue"] tr[data-order-status="pending_requirements"]', maxCount: 0, minCount: 0, description: 'no invalid transition was applied', minWidth: 768 },
+      { type: 'click', selector: '[role="tab"][id="tab-explorer"]', description: 'return to the explorer' },
+      { type: 'click', selector: '[data-testid="explorer-create-gig"]', description: 'open the gig creation drawer' },
+      { type: 'assertVisible', selector: '[data-testid="gig-creation-drawer"]', description: 'creation drawer visible' },
+      { type: 'type', selector: '[data-testid="gig-title-input"]', value: 'I will build a production ready design system in Figma', description: 'gig title' },
+      { type: 'type', selector: '[data-testid="gig-subcategory-input"]', value: 'Design Systems', description: 'subcategory' },
+      { type: 'type', selector: '[data-testid="gig-summary-input"]', value: 'A token driven design system with components, documentation and a clickable prototype.', description: 'summary' },
+      { type: 'click', selector: '[data-testid="gig-creation-next"]', description: 'go to the package step' },
+      { type: 'type', selector: '[data-testid="pkg-basic-price"]', value: '50', description: 'basic price' },
+      { type: 'type', selector: '[data-testid="pkg-standard-price"]', value: '150', description: 'standard price' },
+      { type: 'type', selector: '[data-testid="pkg-premium-price"]', value: '400', description: 'premium price' },
+      { type: 'type', selector: '[data-testid="pkg-basic-features"]', value: 'Component audit\nSource files', description: 'basic features' },
+      { type: 'type', selector: '[data-testid="pkg-standard-features"]', value: '60 components\nDocumentation', description: 'standard features' },
+      { type: 'type', selector: '[data-testid="pkg-premium-features"]', value: 'Prototype\nUsability test', description: 'premium features' },
+      { type: 'click', selector: '[data-testid="gig-creation-next"]', description: 'go to the review step' },
+      { type: 'click', selector: '[data-testid="gig-creation-submit"]', description: 'publish the gig' },
+      { type: 'wait', ms: 400, description: 'wait for the optimistic insert' },
+      { type: 'assertVisible', selector: '[data-testid="toast"]', description: 'success toast raised' },
+      { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 13, description: 'new gig added to the grid' },
+      { type: 'assertNoSelector', selector: '[data-gig-id^="gig-optimistic-"]', description: 'optimistic id replaced by the persisted id' },
+      { type: 'assertNoSelector', selector: '[data-testid="gig-creation-drawer"]', description: 'creation drawer closed after publish' },
+    ],
+  },
 };
 
 const failures = [];
@@ -128,8 +197,51 @@ function recordFailure(scope, message) {
   failures.push(`[${scope}] ${message}`);
 }
 
-async function waitForServer(url, timeoutMs = 45_000) {
-  const deadline = Date.now() + timeoutMs;
+/** Resolves the first *visible* DOM node matching a selector. */
+async function firstVisibleElement(page, selector) {
+  const handle = await page.evaluateHandle((candidateSelector) => {
+    const nodes = Array.from(document.querySelectorAll(candidateSelector));
+    return (
+      nodes.find((node) => {
+        const rect = node.getBoundingClientRect();
+        const style = window.getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      }) ?? null
+    );
+  }, selector);
+  const element = handle.asElement();
+  if (element === null) {
+    await handle.dispose();
+    return null;
+  }
+  return element;
+}
+
+/** Waits until at least one visible node matches the selector. */
+async function waitForVisible(page, selector, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const element = await firstVisibleElement(page, selector);
+    if (element !== null) {
+      await element.dispose();
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`no visible element matches "${selector}" within ${timeout}ms`);
+}
+
+/**
+ * Scrolls an element to the middle of the viewport before interacting with it.
+ * Without this, sticky headers can swallow the synthetic click.
+ */
+async function clickElement(element) {
+  await element.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  await element.click();
+}
+
+async function waitForServer(url, timeoutMs = 45_000) {  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(url);
@@ -169,7 +281,10 @@ async function run() {
 
     for (const viewport of VIEWPORTS) {
       const scope = `phase${PHASE}@${viewport.name}px`;
-      const page = await browser.newPage();
+      // Isolated context per viewport so persisted state never leaks between
+      // runs and every breakpoint starts from the same seed data.
+      const context = await browser.createBrowserContext();
+      const page = await context.newPage();
       await page.setViewport({
         width: viewport.width,
         height: viewport.height,
@@ -276,16 +391,24 @@ async function run() {
         try {
           switch (action.type) {
             case 'click': {
-              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
-              await page.click(action.selector);
+              await waitForVisible(page, action.selector);
+              const element = await firstVisibleElement(page, action.selector);
+              if (element === null) {
+                throw new Error(`no visible element matches "${action.selector}"`);
+              }
+              await clickElement(element);
               await new Promise((resolve) => setTimeout(resolve, 220));
               break;
             }
             case 'type': {
-              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
-              await page.click(action.selector, { clickCount: 3 });
-              await page.type(action.selector, action.value, { delay: 12 });
-              await new Promise((resolve) => setTimeout(resolve, 220));
+              await waitForVisible(page, action.selector);
+              const element = await firstVisibleElement(page, action.selector);
+              if (element === null) {
+                throw new Error(`no visible element matches "${action.selector}"`);
+              }
+              await clickElement(element);
+              await element.click({ clickCount: 3 });
+              await element.type(action.value, { delay: 12 });              await new Promise((resolve) => setTimeout(resolve, 220));
               break;
             }
             case 'press': {
@@ -308,15 +431,34 @@ async function run() {
               break;
             }
             case 'assertVisible': {
-              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
+              await waitForVisible(page, action.selector);
               break;
             }
             case 'assertCount': {
               const count = await page.$$eval(action.selector, (nodes) => nodes.length);
-              const minimum = action.minCount ?? 1;
-              if (count < minimum) {
-                recordFailure(scope, `expected >=${minimum} of "${action.selector}" (${action.description}), found ${count}`);
+              if (typeof action.minCount === 'number' && count < action.minCount) {
+                recordFailure(scope, `expected >=${action.minCount} of "${action.selector}" (${action.description}), found ${count}`);
               }
+              if (typeof action.maxCount === 'number' && count > action.maxCount) {
+                recordFailure(scope, `expected <=${action.maxCount} of "${action.selector}" (${action.description}), found ${count}`);
+              }
+              break;
+            }
+            case 'assertDisabled': {
+              const disabled = await page.$eval(action.selector, (node) => node.disabled === true || node.getAttribute('aria-disabled') === 'true');
+              if (!disabled) {
+                recordFailure(scope, `expected "${action.selector}" to be disabled (${action.description})`);
+              }
+              break;
+            }
+            case 'select': {
+              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
+              await page.select(action.selector, action.value);
+              await new Promise((resolve) => setTimeout(resolve, 220));
+              break;
+            }
+            case 'wait': {
+              await new Promise((resolve) => setTimeout(resolve, action.ms ?? 200));
               break;
             }
             case 'assertNoSelector': {
@@ -386,6 +528,7 @@ async function run() {
       await page.screenshot({ path: path.join(OUTPUT_DIR, `phase-${PHASE}-${viewport.name}.png`), fullPage: false });
       notes.push(`${scope}: checked`);
       await page.close();
+      await context.close();
     }
   } finally {
     if (browser) {

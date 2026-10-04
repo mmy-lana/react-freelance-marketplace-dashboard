@@ -1311,3 +1311,13 @@ export const SEED_GIG_CATEGORY_COUNTS: Record<GigCategory, number> = SEED_GIGS.r
 );
 
 export { SELLERS, BUYERS };
+
+/**
+ * Generates deterministic placeholder artwork for user created gigs so new
+ * listings are visually complete without an upload step.
+ */
+export function createGigPlaceholderImages(title: string, category: GigCategory): string[] {
+  const palette = CATEGORY_PALETTE[category];
+  const glyph = category.charAt(0);
+  return [0, 1, 2].map((variant) => buildThumbnail(title, glyph, palette, variant));
+}
