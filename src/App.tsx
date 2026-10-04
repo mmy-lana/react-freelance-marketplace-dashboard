@@ -1,33 +1,32 @@
-import { useState } from 'react';
-import { Avatar } from './components/primitives/Avatar';
-import { Badge, GigStatusBadge, OrderStatusBadge, SellerLevelBadge } from './components/primitives/Badge';
+import { useMemo, useState } from 'react';
+import { CountdownClock } from './components/compound/CountdownClock';
+import { FilterSlideOver, describeFilters } from './components/compound/FilterSlideOver';
+import { GigCard } from './components/compound/GigCard';
+import { MetricWidget } from './components/compound/MetricWidget';
+import { OrderCardItem } from './components/compound/OrderCardItem';
+import { OrderRowItem } from './components/compound/OrderRowItem';
+import { OrderTimelineTracker } from './components/compound/OrderTimelineTracker';
+import { PackageTierMatrix } from './components/compound/PackageTierMatrix';
+import { Badge } from './components/primitives/Badge';
 import { Button } from './components/primitives/Button';
-import { Input } from './components/primitives/Input';
-import { Modal } from './components/primitives/Modal';
-import { Select, type SelectOption } from './components/primitives/Select';
+import { SlidersHorizontal } from 'lucide-react';
 import {
-  Skeleton,
-  SkeletonGrid,
-  SkeletonList,
-  SkeletonMetricCard,
-  SkeletonProfile,
-} from './components/primitives/Skeleton';
-import { Tabs, type TabItem } from './components/primitives/Tabs';
-import { GIG_CATEGORIES, SELLER_LEVELS } from './types/marketplace';
-import { cn } from './utils/cn';
+  GIG_CATEGORIES,
+  type GigFilterState,
+  type OrderStatus,
+  type PackageTier,
+} from './types/marketplace';
+import { createSeedDataset } from './utils/seedData';
 
-const CATEGORY_OPTIONS: SelectOption<(typeof GIG_CATEGORIES)[number]>[] = GIG_CATEGORIES.map((category) => ({
-  value: category,
-  label: category,
-}));
-
-type DensityTab = 'overview' | 'queue' | 'payouts';
-
-const DENSITY_TABS: TabItem<DensityTab>[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'queue', label: 'Queue', badgeCount: 7 },
-  { id: 'payouts', label: 'Payouts' },
-];
+const DEFAULT_FILTERS: GigFilterState = {
+  searchQuery: '',
+  category: 'All',
+  minBudget: 0,
+  maxBudget: 0,
+  deliveryMaxDays: 0,
+  sellerLevels: [],
+  sortBy: 'relevance',
+};
 
 function Section({
   title,
@@ -50,15 +49,30 @@ function Section({
 }
 
 /**
- * Phase 2 view: exercises every atomic primitive in all of its states.
+ * Phase 3 view: exercises every compound molecule in its production context.
  * Replaced by the marketplace shell once the domain layers land.
  */
 export default function App(): React.JSX.Element {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
-  const [invalidValue, setInvalidValue] = useState('');
-  const [category, setCategory] = useState<(typeof GIG_CATEGORIES)[number]>(GIG_CATEGORIES[0]);
-  const [activeTab, setActiveTab] = useState<DensityTab>('overview');
+  const dataset = useMemo(() => createSeedDataset(), []);
+  const [filters, setFilters] = useState<GigFilterState>(DEFAULT_FILTERS);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<PackageTier>('standard');
+  const [selectedGigIds, setSelectedGigIds] = useState<string[]>([]);
+  const [transitionedOrders, setTransitionedOrders] = useState<Record<string, OrderStatus>>({});
+
+  const featuredGig = dataset.gigs[0];
+  const trackedOrder = dataset.orders[0];
+  const overdueOrder = dataset.orders.find((order) => Date.parse(order.dueDate) <= Date.now()) ?? dataset.orders[1];
+
+  const handleTransition = (orderId: string, status: OrderStatus): void => {
+    setTransitionedOrders((previous) => ({ ...previous, [orderId]: status }));
+  };
+
+  const toggleSelection = (gigId: string): void => {
+    setSelectedGigIds((previous) =>
+      previous.includes(gigId) ? previous.filter((id) => id !== gigId) : [...previous, gigId]
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100" data-testid="app-shell">
@@ -71,235 +85,217 @@ export default function App(): React.JSX.Element {
             <span className="text-lg font-bold tracking-tight text-white">GigHub</span>
           </div>
           <Badge tone="brand" testId="phase-badge">
-            Phase 2 · Design Foundation
+            Phase 3 · Compound Components
           </Badge>
         </div>
       </header>
 
       <main
         className="mx-auto w-full max-w-7xl space-y-4 px-4 py-6 pb-[calc(var(--nav-bottom-height)+24px)] sm:px-6"
-        data-testid="design-system-view"
+        data-testid="compound-view"
       >
         <Section
-          testId="section-button"
-          title="Button"
-          description="Polymorphic action primitive: variants, sizes, loading state, icon-only and anchor rendering."
+          testId="section-gig-card"
+          title="GigCard"
+          description="16:10 media slider, seller identity, clamped title, rating and pricing footer."
         >
-          <div className="flex flex-wrap items-center gap-3">
-            <Button testId="btn-primary">Publish gig</Button>
-            <Button variant="secondary" testId="btn-secondary">
-              Save draft
-            </Button>
-            <Button variant="outline" testId="btn-outline">
-              Preview
-            </Button>
-            <Button variant="danger" testId="btn-danger">
-              Delete
-            </Button>
-            <Button variant="ghost" testId="btn-ghost">
-              Cancel
-            </Button>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="gig-card-grid">
+            {dataset.gigs.slice(0, 3).map((gig) => (
+              <GigCard
+                key={gig.id}
+                gig={gig}
+                testId={`gig-card-${gig.id}`}
+                isSelected={selectedGigIds.includes(gig.id)}
+                onToggleSelect={() => toggleSelection(gig.id)}
+              />
+            ))}
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <Button size="sm" variant="secondary" testId="btn-sm">
-              Small
-            </Button>
-            <Button size="lg" testId="btn-lg">
-              Large
-            </Button>
-            <Button isLoading testId="btn-loading">
-              Uploading
-            </Button>
-            <Button iconOnly aria-label="Notifications" testId="btn-icon">
-              N
-            </Button>
-            <Button as="a" href="#design-system-view" variant="outline" testId="btn-anchor">
-              Anchor action
-            </Button>
-          </div>
-        </Section>
-
-        <Section
-          testId="section-badge"
-          title="Badge"
-          description="Seller level, order status and gig lifecycle pills."
-        >
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2" data-testid="badge-levels">
-              {SELLER_LEVELS.map((level) => (
-                <SellerLevelBadge key={level} level={level} size="md" />
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2" data-testid="badge-order-statuses">
-              <OrderStatusBadge status="pending_requirements" size="md" />
-              <OrderStatusBadge status="in_progress" size="md" />
-              <OrderStatusBadge status="delivered" size="md" />
-              <OrderStatusBadge status="revision" size="md" />
-              <OrderStatusBadge status="completed" size="md" />
-              <OrderStatusBadge status="cancelled" size="md" />
-            </div>
-            <div className="flex flex-wrap items-center gap-2" data-testid="badge-gig-statuses">
-              <GigStatusBadge status="active" size="md" />
-              <GigStatusBadge status="paused" size="md" />
-              <GigStatusBadge status="deleted" size="md" />
-              <Badge tone="info">Info</Badge>
-              <Badge tone="warning">Warning</Badge>
-              <Badge tone="danger">Danger</Badge>
-            </div>
-          </div>
-        </Section>
-
-        <Section
-          testId="section-avatar"
-          title="Avatar"
-          description="Responsive sizes, seller level ring, presence dot and monogram fallback on image failure."
-        >
-          <div className="flex flex-wrap items-center gap-4">
-            <Avatar src="" name="Alex Morgan" size="xs" />
-            <Avatar src="" name="Nova Studio" size="sm" level="level_one" testId="avatar-monogram-demo" />
-            <Avatar src="" name="Kai Motion" size="md" level="level_two" presence="online" testId="avatar-md" />
-            <Avatar src="" name="Lumen Audio" size="lg" level="top_rated" />
-            <Avatar
-              src=""
-              name="Pixel Forge"
-              size="xl"
-              presence="away"
-              testId="avatar-fallback"
-              className="ring-1 ring-dashed ring-slate-600"
-            />
-          </div>
-        </Section>
-
-        <Section
-          testId="section-form"
-          title="Input & Select"
-          description="Controlled fields with leading icons, inline validation and 48px touch targets."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input
-              label="Search gigs"
-              testId="input-search"
-              value={searchValue}
-              onValueChange={setSearchValue}
-              placeholder="Logo design, SEO sprint…"
-              leadingIcon={<span aria-hidden="true">⌕</span>}
-              trailingSlot={
-                searchValue.length > 0 ? (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    onClick={() => setSearchValue('')}
-                    className="inline-flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-                  >
-                    ✕
-                  </button>
-                ) : null
-              }
-              helperText="Search runs after a 300ms debounce."
-            />
-            <Input
-              label="Minimum budget"
-              testId="input-error"
-              value={invalidValue}
-              onValueChange={(value) => {
-                setInvalidValue(value);
-              }}
-              placeholder="e.g. 250"
-              error={invalidValue.length > 0 ? 'Budget must be a positive number.' : undefined}
-              helperText="Enter whole US dollars."
-            />
-            <Select
-              label="Category"
-              testId="select-category"
-              value={category}
-              onValueChange={setCategory}
-              options={CATEGORY_OPTIONS}
-              helperText="Filters the explorer grid."
-            />
-            <Input label="Disabled field" value="" onValueChange={() => undefined} disabled testId="input-disabled" />
-          </div>
-        </Section>
-
-        <Section
-          testId="section-tabs"
-          title="Tabs"
-          description="Sliding indicator tabs with arrow key navigation and badge counters."
-        >
-          <Tabs
-            items={DENSITY_TABS}
-            activeId={activeTab}
-            onChange={setActiveTab}
-            ariaLabel="Dashboard density"
-            testId="tabs-density"
-            stretch
-          />
-          <p className="mt-3 text-sm text-slate-400">
-            Selected tab: <span data-testid="active-tab-label">{activeTab}</span>
+          <p className="mt-3 text-xs text-slate-500">
+            Selected for comparison: <span data-testid="selected-count">{selectedGigIds.length}</span>
           </p>
         </Section>
 
         <Section
-          testId="section-modal"
-          title="Modal"
-          description="Focus trapped dialog that becomes a bottom sheet on mobile."
+          testId="section-package-matrix"
+          title="PackageTierMatrix"
+          description="Three tier comparison: swipe rail on mobile, three column grid from 768px."
         >
-          <Button testId="open-modal" onClick={() => setIsModalOpen(true)}>
-            Open delivery dialog
-          </Button>
-          <Modal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-            title="Deliver order GH-0001B"
-            description="Attach up to 5 files, 100MB total, in an approved format."
-            footer={
-              <>
-                <Button variant="ghost" onClick={() => setIsModalOpen(false)} testId="modal-cancel">
-                  Cancel
-                </Button>
-                <Button onClick={() => setIsModalOpen(false)} testId="modal-confirm">
-                  Send delivery
-                </Button>
-              </>
-            }
-            testId="delivery-modal"
-          >
-            <div className="space-y-3 text-sm text-slate-300">
-              <p>
-                Accepted formats: ZIP, PDF, PNG, JPEG, SVG and MP4. Files are validated locally before the order
-                transitions to delivered.
-              </p>
-              <p className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-400">
-                Modal content is scrollable, focus is trapped, and Escape dismisses the dialog.
-              </p>
-            </div>
-          </Modal>
+          <PackageTierMatrix
+            packages={featuredGig.packages}
+            activeTier={selectedTier}
+            onSelectTier={setSelectedTier}
+            testId="package-matrix"
+          />
+          <p className="mt-3 text-xs text-slate-500">
+            Selected tier: <span data-testid="selected-tier">{selectedTier}</span>
+          </p>
         </Section>
 
         <Section
-          testId="section-skeleton"
-          title="Skeleton"
-          description="Pulse loaders matching production card, list and metric geometry."
+          testId="section-metric"
+          title="MetricWidget"
+          description="KPI tiles with delta indicator and trajectory sparkline."
         >
-          <SkeletonProfile />
-          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <SkeletonMetricCard key={index} />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="metric-grid">
+            {dataset.kpiSeries.map((series, index) => (
+              <MetricWidget
+                key={series.id}
+                label={series.label}
+                unit={series.unit === 'currency' ? 'currency' : series.unit === 'percent' ? 'percent' : series.unit}
+                value={series.points[series.points.length - 1]?.value ?? 0}
+                deltaPercent={index === 0 ? 12.4 : index === 1 ? -3.1 : 4.2}
+                deltaCaption="vs last week"
+                points={series.points}
+                testId={`metric-${series.id}`}
+              />
             ))}
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-4">
-            <Skeleton variant="circle" />
-            <Skeleton variant="rect" className="max-w-[200px]" />
-            <Skeleton variant="text" className="max-w-[140px]" />
-          </div>
-          <SkeletonGrid count={3} className="mt-4" testId="skeleton-grid" />
-          <SkeletonList rows={3} className="mt-4" testId="skeleton-list" />
         </Section>
+
+        <Section
+          testId="section-timeline"
+          title="OrderTimelineTracker & CountdownClock"
+          description="Lifecycle rail derived from the status machine plus a live deadline badge."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <OrderTimelineTracker
+              status={transitionedOrders[trackedOrder.id] ?? trackedOrder.status}
+              milestones={trackedOrder.milestones}
+              testId="timeline-active"
+            />
+            <div className="space-y-3">
+              <p className="text-sm text-slate-400">
+                {overdueOrder.orderNumber} · {overdueOrder.gigTitle}
+              </p>
+              <CountdownClock dueDateIsoString={overdueOrder.dueDate} status={overdueOrder.status} size="lg" testId="countdown-overdue" />
+              <CountdownClock dueDateIsoString={trackedOrder.dueDate} status={trackedOrder.status} size="lg" testId="countdown-upcoming" />
+              <Button
+                variant="secondary"
+                size="sm"
+                testId="timeline-advance"
+                onClick={() => handleTransition(trackedOrder.id, 'delivered')}
+              >
+                Advance timeline
+              </Button>
+            </div>
+          </div>
+        </Section>
+
+        <Section
+          testId="section-orders"
+          title="OrderRowItem & OrderCardItem"
+          description="Desktop ledger row collapses columns below 1024px; mobile cards stack with a full width CTA."
+        >
+          <div className="mb-4 flex flex-wrap items-center gap-2 md:hidden">
+            <Button
+              variant="secondary"
+              testId="open-filter-drawer"
+              iconLeft={<SlidersHorizontal aria-hidden="true" className="size-4" />}
+              onClick={() => setIsDrawerOpen(true)}
+            >
+              Filters ({describeFilters(filters).length})
+            </Button>
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-2xl border border-slate-700/70 md:block" data-testid="order-table-wrapper">
+            <table className="w-full min-w-[720px] border-collapse">
+              <caption className="sr-only">Active and historical orders</caption>
+              <thead>
+                <tr className="border-b border-slate-700/70 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th scope="col" className="px-3 py-3 font-medium">
+                    Order
+                  </th>
+                  <th scope="col" className="hidden px-3 py-3 font-medium xl:table-cell">
+                    Buyer
+                  </th>
+                  <th scope="col" className="hidden px-3 py-3 font-medium lg:table-cell">
+                    Started
+                  </th>
+                  <th scope="col" className="px-3 py-3 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-3 py-3 font-medium">
+                    Amount
+                  </th>
+                  <th scope="col" className="px-3 py-3 font-medium">
+                    Deadline
+                  </th>
+                  <th scope="col" className="px-3 py-3 text-right font-medium">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody data-testid="order-table-body">
+                {dataset.orders.slice(0, 5).map((order) => (
+                  <OrderRowItem
+                    key={order.id}
+                    order={
+                      transitionedOrders[order.id]
+                        ? { ...order, status: transitionedOrders[order.id] as OrderStatus }
+                        : order
+                    }
+                    onTransition={handleTransition}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-3 md:hidden" data-testid="order-card-list">
+            {dataset.orders.slice(0, 3).map((order) => (
+              <OrderCardItem
+                key={order.id}
+                order={
+                  transitionedOrders[order.id]
+                    ? { ...order, status: transitionedOrders[order.id] as OrderStatus }
+                    : order
+                }
+                onTransition={handleTransition}
+              />
+            ))}
+          </div>
+        </Section>
+
+        <Section
+          testId="section-filter"
+          title="FilterSlideOver"
+          description="Inline sidebar from 1024px, bottom sheet drawer below it."
+        >
+          <div className="hidden lg:block">
+            <FilterSlideOver
+              mode="inline"
+              isOpen={false}
+              onClose={() => undefined}
+              filters={filters}
+              onFiltersChange={setFilters}
+              onReset={() => setFilters(DEFAULT_FILTERS)}
+              resultCount={dataset.gigs.length}
+              totalCount={dataset.gigs.length}
+              testId="filter-inline"
+            />
+          </div>
+          <p className="text-xs text-slate-500 lg:hidden">
+            On small screens the same controls render inside the drawer opened from the queue header.
+          </p>
+          <FilterSlideOver
+            mode="drawer"
+            isOpen={isDrawerOpen}
+            onClose={() => setIsDrawerOpen(false)}
+            filters={filters}
+            onFiltersChange={setFilters}
+            onReset={() => setFilters(DEFAULT_FILTERS)}
+            resultCount={dataset.gigs.filter((gig) => (filters.category === 'All' ? true : gig.category === filters.category)).length}
+            totalCount={dataset.gigs.length}
+            testId="filter-drawer"
+          />
+        </Section>
+
+        <p className="text-xs text-slate-500">
+          Categories in seed: {GIG_CATEGORIES.length}. Gigs: {dataset.gigs.length}.
+        </p>
       </main>
 
-      <div
-        aria-hidden="true"
-        className={cn('h-[var(--nav-bottom-height)] border-t border-slate-800 bg-slate-900/80')}
-      />
+      <div aria-hidden="true" className="h-[var(--nav-bottom-height)]" />
     </div>
   );
 }

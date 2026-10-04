@@ -88,6 +88,37 @@ const PHASE_ASSERTIONS = {
       { type: 'assertNoSelector', selector: '[role="dialog"]', description: 'no orphan dialog in the DOM' },
     ],
   },
+  3: {
+    checks: [
+      { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
+      { selector: '[data-testid="compound-view"]', description: 'Phase 3 compound view rendered' },
+      { selector: '[data-testid="gig-card-grid"] [data-gig-id]', minCount: 3, description: 'Gig cards rendered' },
+      { selector: '[data-testid="gig-card-grid"] img', minCount: 3, description: 'Gig media loaded' },
+      { selector: '[data-testid="package-matrix"] [data-testid^="tier-"]', minCount: 3, description: 'Package tiers rendered' },
+      { selector: '[data-testid="metric-grid"] [data-trend]', minCount: 4, description: 'Metric widgets rendered' },
+      { selector: '[data-testid="metric-grid"] svg path', minCount: 4, description: 'Sparklines drawn' },
+      { selector: '[data-testid="timeline-active"] ol[aria-label="Order lifecycle"] li', minCount: 4, description: 'Timeline stages rendered' },
+      { selector: '[data-testid="countdown-overdue"] [role="timer"]', description: 'Overdue countdown rendered' },
+      { selector: '[data-testid="section-filter"]', description: 'Filter section rendered' },
+      { text: 'Phase 3', description: 'Phase badge visible' },
+    ],
+    actions: [
+      { type: 'assertCount', selector: '[data-testid="countdown-overdue"][data-overdue="true"]', minCount: 1, description: 'overdue flag set' },
+      { type: 'click', selector: '[data-testid="tier-rail"] [data-testid="tier-premium"] button', description: 'choose premium tier', maxWidth: 767 },
+      { type: 'assertText', selector: '[data-testid="selected-tier"]', value: 'premium', description: 'tier selection propagated', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="tier-grid"] [data-testid="tier-basic"] button', description: 'choose basic tier', minWidth: 768 },
+      { type: 'assertText', selector: '[data-testid="selected-tier"]', value: 'basic', description: 'tier selection propagated (desktop)', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="gig-card-grid"] [data-gig-id] button[aria-label^="Add"]', description: 'select a gig' },
+      { type: 'assertText', selector: '[data-testid="selected-count"]', value: '1', description: 'selection count updated' },
+      { type: 'click', selector: '[data-testid="open-filter-drawer"]', description: 'open filter drawer', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="filter-drawer-panel"]', description: 'filter drawer opened', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="filter-drawer-panel"] [data-testid="filter-level-top_rated"]', description: 'toggle seller tier filter', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="filter-apply"]', description: 'apply filters', maxWidth: 767 },
+      { type: 'waitForHidden', selector: '[data-testid="filter-drawer-panel"]', description: 'filter drawer closed', maxWidth: 767 },
+      { type: 'assertCount', selector: '[data-testid="order-table-body"] tr', minCount: 5, description: 'desktop ledger rows', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="order-card-list"] article', minCount: 3, description: 'mobile order cards', maxWidth: 767 },
+    ],
+  },
 };
 
 const failures = [];
@@ -203,11 +234,11 @@ async function run() {
         );
       }
 
-      // 3. No broken images.
+      // 3. No broken images (lazy images that have not entered the viewport are ignored).
       const brokenImages = await page.evaluate(() =>
         Array.from(document.images)
-          .filter((image) => !image.complete || image.naturalWidth === 0)
-          .map((image) => image.currentSrc || image.src)
+          .filter((image) => image.complete && image.naturalWidth === 0)
+          .map((image) => (image.currentSrc || image.src).slice(0, 120))
       );
       if (brokenImages.length > 0) {
         recordFailure(scope, `broken images: ${brokenImages.join(', ')}`);
@@ -236,6 +267,12 @@ async function run() {
 
       // 5. Interaction script for the current phase.
       for (const action of assertions.actions ?? []) {
+        if (typeof action.minWidth === 'number' && viewport.width < action.minWidth) {
+          continue;
+        }
+        if (typeof action.maxWidth === 'number' && viewport.width > action.maxWidth) {
+          continue;
+        }
         try {
           switch (action.type) {
             case 'click': {
@@ -272,6 +309,14 @@ async function run() {
             }
             case 'assertVisible': {
               await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
+              break;
+            }
+            case 'assertCount': {
+              const count = await page.$$eval(action.selector, (nodes) => nodes.length);
+              const minimum = action.minCount ?? 1;
+              if (count < minimum) {
+                recordFailure(scope, `expected >=${minimum} of "${action.selector}" (${action.description}), found ${count}`);
+              }
               break;
             }
             case 'assertNoSelector': {
