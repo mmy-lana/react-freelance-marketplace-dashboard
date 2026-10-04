@@ -31,15 +31,63 @@ const VIEWPORTS = [
   { name: '1280', width: 1280, height: 900, expectMobileNav: false },
 ];
 
-/** DOM contracts per phase. Every entry must hold at every viewport. */
+/**
+ * DOM contracts per phase.
+ *
+ * `checks` run on the freshly loaded page, `actions` run afterwards as an
+ * ordered interaction script (click / type / press / wait / assert-visible /
+ * assert-count / assert-text) so interactive contracts are exercised for real.
+ */
 const PHASE_ASSERTIONS = {
-  1: [
-    { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
-    { selector: '[data-testid="foundation-view"]', description: 'Phase 1 foundation view rendered' },
-    { selector: '[data-testid="storage-report"] li', minCount: 5, description: 'Storage integrity report rows' },
-    { selector: '[data-testid="category-coverage"] li', minCount: 7, description: 'Category coverage rows' },
-    { text: 'Phase 1', description: 'Phase badge visible' },
-  ],
+  1: {
+    checks: [
+      { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
+      { selector: '[data-testid="foundation-view"]', description: 'Phase 1 foundation view rendered' },
+      { selector: '[data-testid="storage-report"] li', minCount: 5, description: 'Storage integrity report rows' },
+      { selector: '[data-testid="category-coverage"] li', minCount: 7, description: 'Category coverage rows' },
+      { text: 'Phase 1', description: 'Phase badge visible' },
+    ],
+    actions: [],
+  },
+  2: {
+    checks: [
+      { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
+      { selector: '[data-testid="design-system-view"]', description: 'Phase 2 design system view rendered' },
+      { selector: '[data-testid="btn-primary"]', description: 'Primary button' },
+      { selector: '[data-testid="btn-secondary"]', description: 'Secondary button' },
+      { selector: '[data-testid="btn-outline"]', description: 'Outline button' },
+      { selector: '[data-testid="btn-danger"]', description: 'Danger button' },
+      { selector: '[data-testid="btn-anchor"]', description: 'Anchor-mode button' },
+      { selector: '[data-testid="badge-levels"] [data-testid^="seller-level-"]', minCount: 4, description: 'Seller level badges' },
+      {
+        selector: '[data-testid="badge-order-statuses"] [data-testid^="order-status-"]',
+        minCount: 6,
+        description: 'Order status badges',
+      },
+      { selector: '[data-testid="badge-gig-statuses"] [data-testid^="gig-status-"]', minCount: 3, description: 'Gig status badges' },
+      { selector: '[data-testid="avatar-fallback"] [data-testid="avatar-monogram"]', description: 'Avatar monogram fallback on image error' },
+      { selector: '[data-testid="input-search"]', description: 'Search input' },
+      { selector: '[data-testid="select-category"]', description: 'Category select' },
+      { selector: '[role="tablist"][data-testid="tabs-density"]', description: 'Tab list' },
+      { selector: '[role="tab"]', minCount: 3, description: 'Tabs rendered' },
+      { selector: '[data-testid="skeleton-grid"]', description: 'Skeleton grid' },
+      { selector: '[data-testid="skeleton-list"]', description: 'Skeleton list' },
+      { text: 'Phase 2', description: 'Phase badge visible' },
+    ],
+    actions: [
+      { type: 'type', selector: '[data-testid="input-search"]', value: 'logo design', description: 'typing into search input' },
+      { type: 'assertValue', selector: '[data-testid="input-search"]', value: 'logo design', description: 'search input is controlled' },
+      { type: 'click', selector: '[role="tab"][id="tab-queue"]', description: 'switch tab' },
+      { type: 'assertText', selector: '[data-testid="active-tab-label"]', value: 'queue', description: 'tab selection propagated' },
+      { type: 'press', key: 'Tab', description: 'keyboard navigation stays inside the tab list' },
+      { type: 'click', selector: '[data-testid="open-modal"]', description: 'open modal' },
+      { type: 'assertVisible', selector: '[role="dialog"]', description: 'modal dialog opened' },
+      { type: 'assertText', selector: '[role="dialog"]', value: 'Deliver order GH-0001B', description: 'modal title rendered' },
+      { type: 'press', key: 'Escape', description: 'escape closes modal' },
+      { type: 'waitForHidden', selector: '[role="dialog"]', description: 'modal closed on Escape' },
+      { type: 'assertNoSelector', selector: '[role="dialog"]', description: 'no orphan dialog in the DOM' },
+    ],
+  },
 };
 
 const failures = [];
@@ -166,7 +214,8 @@ async function run() {
       }
 
       // 4. Phase specific DOM contracts.
-      for (const assertion of PHASE_ASSERTIONS[PHASE] ?? []) {
+      const assertions = PHASE_ASSERTIONS[PHASE] ?? { checks: [], actions: [] };
+      for (const assertion of assertions.checks ?? []) {
         if (assertion.selector) {
           const count = await page.$$eval(assertion.selector, (nodes) => nodes.length);
           const minimum = assertion.minCount ?? 1;
@@ -185,7 +234,87 @@ async function run() {
         }
       }
 
-      // 5. Touch target sizing on mobile viewports.
+      // 5. Interaction script for the current phase.
+      for (const action of assertions.actions ?? []) {
+        try {
+          switch (action.type) {
+            case 'click': {
+              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
+              await page.click(action.selector);
+              await new Promise((resolve) => setTimeout(resolve, 220));
+              break;
+            }
+            case 'type': {
+              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
+              await page.click(action.selector, { clickCount: 3 });
+              await page.type(action.selector, action.value, { delay: 12 });
+              await new Promise((resolve) => setTimeout(resolve, 220));
+              break;
+            }
+            case 'press': {
+              await page.keyboard.press(action.key);
+              await new Promise((resolve) => setTimeout(resolve, 220));
+              break;
+            }
+            case 'assertValue': {
+              const value = await page.$eval(action.selector, (node) => node.value ?? '');
+              if (value !== action.value) {
+                recordFailure(scope, `expected value "${action.value}" (${action.description}), found "${value}"`);
+              }
+              break;
+            }
+            case 'assertText': {
+              const text = await page.$eval(action.selector, (node) => node.textContent ?? '');
+              if (!text.includes(action.value)) {
+                recordFailure(scope, `expected text containing "${action.value}" (${action.description}), found "${text}"`);
+              }
+              break;
+            }
+            case 'assertVisible': {
+              await page.waitForSelector(action.selector, { visible: true, timeout: 10_000 });
+              break;
+            }
+            case 'assertNoSelector': {
+              const count = await page.$$eval(action.selector, (nodes) => nodes.length);
+              if (count > 0) {
+                recordFailure(scope, `unexpected ${count} match(es) for "${action.selector}" (${action.description})`);
+              }
+              break;
+            }
+            case 'waitForHidden': {
+              await page.waitForSelector(action.selector, { hidden: true, timeout: 10_000 });
+              break;
+            }
+            default:
+              recordFailure(scope, `unknown action type "${action.type}"`);
+          }
+        } catch (error) {
+          recordFailure(scope, `action "${action.type} ${action.selector ?? action.key ?? ''}" failed: ${error.message}`);
+          break;
+        }
+      }
+
+      // 6. No console errors introduced by the interaction script.
+      if (consoleErrors.length > 0) {
+        recordFailure(scope, `console errors after interactions: ${consoleErrors.join(' | ')}`);
+      }
+      if (failedRequests.length > 0) {
+        recordFailure(scope, `failed requests after interactions: ${failedRequests.join(' | ')}`);
+      }
+
+      // 7. No horizontal overflow after the interaction script.
+      const postOverflow = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      if (postOverflow.scrollWidth > postOverflow.innerWidth + 1) {
+        recordFailure(
+          scope,
+          `horizontal overflow after interactions ${postOverflow.scrollWidth}px > ${postOverflow.innerWidth}px`
+        );
+      }
+
+      // 8. Touch target sizing on mobile viewports.
       if (viewport.expectMobileNav) {
         const smallTargets = await page.evaluate(() => {
           const results = [];

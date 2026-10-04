@@ -1,157 +1,305 @@
-import { useMemo } from 'react';
-import { useLocalStorageSync } from './hooks/useLocalStorageSync';
-import { GIG_CATEGORIES, SELLER_LEVEL_LABELS, ORDER_STATUS_LABELS } from './types/marketplace';
-import { formatCentsToUsd } from './utils/currency';
-import { computeRemainingTime, formatAbsoluteDate, formatRelativeTime } from './utils/date';
-import { generateSafeId } from './utils/id';
-import { createSeedDataset, SEED_GIG_CATEGORY_COUNTS } from './utils/seedData';
-import { inspectStorageHealth, isStorageWritable, readRawStorageValue, STORAGE_KEYS } from './utils/storage';
+import { useState } from 'react';
+import { Avatar } from './components/primitives/Avatar';
+import { Badge, GigStatusBadge, OrderStatusBadge, SellerLevelBadge } from './components/primitives/Badge';
+import { Button } from './components/primitives/Button';
+import { Input } from './components/primitives/Input';
+import { Modal } from './components/primitives/Modal';
+import { Select, type SelectOption } from './components/primitives/Select';
+import {
+  Skeleton,
+  SkeletonGrid,
+  SkeletonList,
+  SkeletonMetricCard,
+  SkeletonProfile,
+} from './components/primitives/Skeleton';
+import { Tabs, type TabItem } from './components/primitives/Tabs';
+import { GIG_CATEGORIES, SELLER_LEVELS } from './types/marketplace';
+import { cn } from './utils/cn';
 
-const STATUS_BADGE_TONES: Record<string, string> = {
-  empty: 'border-slate-700 bg-slate-800/60 text-slate-300',
-  healthy: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
-  recovered: 'border-amber-400/40 bg-amber-400/10 text-amber-300',
-  corrupted: 'border-rose-500/40 bg-rose-500/10 text-rose-300',
-};
+const CATEGORY_OPTIONS: SelectOption<(typeof GIG_CATEGORIES)[number]>[] = GIG_CATEGORIES.map((category) => ({
+  value: category,
+  label: category,
+}));
+
+type DensityTab = 'overview' | 'queue' | 'payouts';
+
+const DENSITY_TABS: TabItem<DensityTab>[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'queue', label: 'Queue', badgeCount: 7 },
+  { id: 'payouts', label: 'Payouts' },
+];
+
+function Section({
+  title,
+  description,
+  children,
+  testId,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+  testId: string;
+}): React.JSX.Element {
+  return (
+    <section className="rounded-2xl border border-slate-800 bg-slate-800/40 p-4 sm:p-5" data-testid={testId}>
+      <h2 className="text-base font-semibold text-white">{title}</h2>
+      <p className="mt-1 text-sm text-slate-400">{description}</p>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
 
 /**
- * Phase 1 foundation view: renders the persistence + utility layer diagnostics
- * that the marketplace shell consumes from Phase 2 onward.
+ * Phase 2 view: exercises every atomic primitive in all of its states.
+ * Replaced by the marketplace shell once the domain layers land.
  */
 export default function App(): React.JSX.Element {
-  const [lastSessionId, setLastSessionId] = useLocalStorageSync('gighub:session:v1', generateSafeId('session'));
-  const dataset = useMemo(() => createSeedDataset(), []);
-  const reports = useMemo(() => inspectStorageHealth(), []);
-  const writable = useMemo(() => isStorageWritable(), []);
-  const rawGigs = readRawStorageValue(STORAGE_KEYS.gigs);
-  const dueSoonest = dataset.orders.reduce((closest, order) =>
-    Date.parse(order.dueDate) < Date.parse(closest.dueDate) ? order : closest
-  );
-  const countdown = computeRemainingTime(dueSoonest.dueDate, Date.now());
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [invalidValue, setInvalidValue] = useState('');
+  const [category, setCategory] = useState<(typeof GIG_CATEGORIES)[number]>(GIG_CATEGORIES[0]);
+  const [activeTab, setActiveTab] = useState<DensityTab>('overview');
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100" data-testid="app-shell">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-lg font-bold text-slate-950">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-500 text-lg font-bold text-slate-950">
               F
             </span>
             <span className="text-lg font-bold tracking-tight text-white">GigHub</span>
           </div>
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
-            Phase 1 · Platform Foundation
-          </span>
+          <Badge tone="brand" testId="phase-badge">
+            Phase 2 · Design Foundation
+          </Badge>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-[calc(var(--nav-bottom-height)+24px)] sm:px-6">
-        <section className="rounded-xl border border-slate-800 bg-slate-800/40 p-5" data-testid="foundation-view">
-          <h1 className="text-lg font-semibold text-white">Persistence &amp; type foundation</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Seeded dataset, storage integrity probe and utility verification. This panel is replaced by the
-            marketplace shell once the domain layers land.
-          </p>
-          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              { label: 'Gigs seeded', value: String(dataset.gigs.length) },
-              { label: 'Orders seeded', value: String(dataset.orders.length) },
-              { label: 'Storage writable', value: writable ? 'yes' : 'no' },
-              { label: 'Stored gig payload', value: rawGigs.state },
-            ].map((stat) => (
-              <div key={stat.label} className="rounded-lg border border-slate-700/70 bg-slate-900/60 p-3">
-                <dt className="text-xs uppercase tracking-wide text-slate-500">{stat.label}</dt>
-                <dd className="mt-1 text-lg font-semibold text-white">{stat.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+      <main
+        className="mx-auto w-full max-w-7xl space-y-4 px-4 py-6 pb-[calc(var(--nav-bottom-height)+24px)] sm:px-6"
+        data-testid="design-system-view"
+      >
+        <Section
+          testId="section-button"
+          title="Button"
+          description="Polymorphic action primitive: variants, sizes, loading state, icon-only and anchor rendering."
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Button testId="btn-primary">Publish gig</Button>
+            <Button variant="secondary" testId="btn-secondary">
+              Save draft
+            </Button>
+            <Button variant="outline" testId="btn-outline">
+              Preview
+            </Button>
+            <Button variant="danger" testId="btn-danger">
+              Delete
+            </Button>
+            <Button variant="ghost" testId="btn-ghost">
+              Cancel
+            </Button>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button size="sm" variant="secondary" testId="btn-sm">
+              Small
+            </Button>
+            <Button size="lg" testId="btn-lg">
+              Large
+            </Button>
+            <Button isLoading testId="btn-loading">
+              Uploading
+            </Button>
+            <Button iconOnly aria-label="Notifications" testId="btn-icon">
+              N
+            </Button>
+            <Button as="a" href="#design-system-view" variant="outline" testId="btn-anchor">
+              Anchor action
+            </Button>
+          </div>
+        </Section>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-          <h2 className="text-base font-semibold text-white">Storage integrity report</h2>
-          <ul className="mt-4 space-y-2" data-testid="storage-report">
-            {reports.map((report) => (
-              <li
-                key={report.key}
-                className="flex flex-col gap-1 rounded-lg border border-slate-700/70 bg-slate-900/60 p-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <code className="text-xs text-slate-400">{report.key}</code>
-                  <p className="text-sm text-slate-300">{report.message}</p>
-                </div>
-                <span
-                  className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-medium ${STATUS_BADGE_TONES[report.status] ?? STATUS_BADGE_TONES.healthy}`}
-                >
-                  {report.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-            <h2 className="text-base font-semibold text-white">Category coverage</h2>
-            <ul className="mt-3 space-y-2 text-sm" data-testid="category-coverage">
-              {GIG_CATEGORIES.map((category) => (
-                <li key={category} className="flex items-center justify-between gap-3">
-                  <span className="text-slate-300">{category}</span>
-                  <span className="rounded-md bg-slate-900/70 px-2 py-0.5 text-xs font-medium text-slate-300">
-                    {SEED_GIG_CATEGORY_COUNTS[category]} gigs
-                  </span>
-                </li>
+        <Section
+          testId="section-badge"
+          title="Badge"
+          description="Seller level, order status and gig lifecycle pills."
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2" data-testid="badge-levels">
+              {SELLER_LEVELS.map((level) => (
+                <SellerLevelBadge key={level} level={level} size="md" />
               ))}
-            </ul>
+            </div>
+            <div className="flex flex-wrap items-center gap-2" data-testid="badge-order-statuses">
+              <OrderStatusBadge status="pending_requirements" size="md" />
+              <OrderStatusBadge status="in_progress" size="md" />
+              <OrderStatusBadge status="delivered" size="md" />
+              <OrderStatusBadge status="revision" size="md" />
+              <OrderStatusBadge status="completed" size="md" />
+              <OrderStatusBadge status="cancelled" size="md" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2" data-testid="badge-gig-statuses">
+              <GigStatusBadge status="active" size="md" />
+              <GigStatusBadge status="paused" size="md" />
+              <GigStatusBadge status="deleted" size="md" />
+              <Badge tone="info">Info</Badge>
+              <Badge tone="warning">Warning</Badge>
+              <Badge tone="danger">Danger</Badge>
+            </div>
           </div>
+        </Section>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-            <h2 className="text-base font-semibold text-white">Utility verification</h2>
-            <ul className="mt-3 space-y-2 text-sm text-slate-300">
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Current profile</span>
-                <span>
-                  {dataset.profile.displayName} · {SELLER_LEVEL_LABELS[dataset.profile.level]}
-                </span>
-              </li>
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Lifetime earnings</span>
-                <span className="tabular-nums">{formatCentsToUsd(dataset.profile.totalEarnedCents)}</span>
-              </li>
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Member since</span>
-                <span>{formatAbsoluteDate(dataset.profile.memberSince)}</span>
-              </li>
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Last order updated</span>
-                <span>{formatRelativeTime(dataset.orders[0].updatedAt)}</span>
-              </li>
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Soonest deadline</span>
-                <span className="tabular-nums">
-                  {dueSoonest.orderNumber} · {countdown.formattedString}
-                </span>
-              </li>
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Order statuses</span>
-                <span>{Object.values(ORDER_STATUS_LABELS).join(', ')}</span>
-              </li>
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Session id (persisted)</span>
-                <code className="truncate text-xs text-slate-400">{lastSessionId}</code>
-              </li>
-            </ul>
-            <button
-              type="button"
-              onClick={() => setLastSessionId(generateSafeId('session'))}
-              className="mt-4 min-h-[44px] w-full rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
-            >
-              Regenerate persisted session id
-            </button>
+        <Section
+          testId="section-avatar"
+          title="Avatar"
+          description="Responsive sizes, seller level ring, presence dot and monogram fallback on image failure."
+        >
+          <div className="flex flex-wrap items-center gap-4">
+            <Avatar src="" name="Alex Morgan" size="xs" />
+            <Avatar src="" name="Nova Studio" size="sm" level="level_one" testId="avatar-monogram-demo" />
+            <Avatar src="" name="Kai Motion" size="md" level="level_two" presence="online" testId="avatar-md" />
+            <Avatar src="" name="Lumen Audio" size="lg" level="top_rated" />
+            <Avatar
+              src=""
+              name="Pixel Forge"
+              size="xl"
+              presence="away"
+              testId="avatar-fallback"
+              className="ring-1 ring-dashed ring-slate-600"
+            />
           </div>
-        </section>
+        </Section>
+
+        <Section
+          testId="section-form"
+          title="Input & Select"
+          description="Controlled fields with leading icons, inline validation and 48px touch targets."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              label="Search gigs"
+              testId="input-search"
+              value={searchValue}
+              onValueChange={setSearchValue}
+              placeholder="Logo design, SEO sprint…"
+              leadingIcon={<span aria-hidden="true">⌕</span>}
+              trailingSlot={
+                searchValue.length > 0 ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => setSearchValue('')}
+                    className="inline-flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                  >
+                    ✕
+                  </button>
+                ) : null
+              }
+              helperText="Search runs after a 300ms debounce."
+            />
+            <Input
+              label="Minimum budget"
+              testId="input-error"
+              value={invalidValue}
+              onValueChange={(value) => {
+                setInvalidValue(value);
+              }}
+              placeholder="e.g. 250"
+              error={invalidValue.length > 0 ? 'Budget must be a positive number.' : undefined}
+              helperText="Enter whole US dollars."
+            />
+            <Select
+              label="Category"
+              testId="select-category"
+              value={category}
+              onValueChange={setCategory}
+              options={CATEGORY_OPTIONS}
+              helperText="Filters the explorer grid."
+            />
+            <Input label="Disabled field" value="" onValueChange={() => undefined} disabled testId="input-disabled" />
+          </div>
+        </Section>
+
+        <Section
+          testId="section-tabs"
+          title="Tabs"
+          description="Sliding indicator tabs with arrow key navigation and badge counters."
+        >
+          <Tabs
+            items={DENSITY_TABS}
+            activeId={activeTab}
+            onChange={setActiveTab}
+            ariaLabel="Dashboard density"
+            testId="tabs-density"
+            stretch
+          />
+          <p className="mt-3 text-sm text-slate-400">
+            Selected tab: <span data-testid="active-tab-label">{activeTab}</span>
+          </p>
+        </Section>
+
+        <Section
+          testId="section-modal"
+          title="Modal"
+          description="Focus trapped dialog that becomes a bottom sheet on mobile."
+        >
+          <Button testId="open-modal" onClick={() => setIsModalOpen(true)}>
+            Open delivery dialog
+          </Button>
+          <Modal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            title="Deliver order GH-0001B"
+            description="Attach up to 5 files, 100MB total, in an approved format."
+            footer={
+              <>
+                <Button variant="ghost" onClick={() => setIsModalOpen(false)} testId="modal-cancel">
+                  Cancel
+                </Button>
+                <Button onClick={() => setIsModalOpen(false)} testId="modal-confirm">
+                  Send delivery
+                </Button>
+              </>
+            }
+            testId="delivery-modal"
+          >
+            <div className="space-y-3 text-sm text-slate-300">
+              <p>
+                Accepted formats: ZIP, PDF, PNG, JPEG, SVG and MP4. Files are validated locally before the order
+                transitions to delivered.
+              </p>
+              <p className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-400">
+                Modal content is scrollable, focus is trapped, and Escape dismisses the dialog.
+              </p>
+            </div>
+          </Modal>
+        </Section>
+
+        <Section
+          testId="section-skeleton"
+          title="Skeleton"
+          description="Pulse loaders matching production card, list and metric geometry."
+        >
+          <SkeletonProfile />
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <SkeletonMetricCard key={index} />
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <Skeleton variant="circle" />
+            <Skeleton variant="rect" className="max-w-[200px]" />
+            <Skeleton variant="text" className="max-w-[140px]" />
+          </div>
+          <SkeletonGrid count={3} className="mt-4" testId="skeleton-grid" />
+          <SkeletonList rows={3} className="mt-4" testId="skeleton-list" />
+        </Section>
       </main>
 
-      <div aria-hidden="true" className="h-[var(--nav-bottom-height)]" />
+      <div
+        aria-hidden="true"
+        className={cn('h-[var(--nav-bottom-height)] border-t border-slate-800 bg-slate-900/80')}
+      />
     </div>
   );
 }

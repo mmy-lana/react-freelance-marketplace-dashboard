@@ -1,17 +1,108 @@
 @import "tailwindcss";
 
+/* -------------------------------------------------------------------------- */
+/* Phase 2 — CSS-first design foundation (Tailwind v4 `@theme`)                 */
+/* -------------------------------------------------------------------------- */
+
 @theme {
+  /* Surface + brand tokens mandated by the specification */
   --color-surface-bg: var(--color-slate-900);
   --color-surface-card: var(--color-slate-800);
   --color-surface-border: var(--color-slate-700);
   --color-brand-primary: var(--color-emerald-500);
   --color-brand-hover: var(--color-emerald-400);
   --color-brand-accent: var(--color-amber-400);
+
+  /* Supporting semantic palette */
+  --color-brand-ink: #0f172a;
+  --color-surface-muted: var(--color-slate-800);
+  --color-surface-raised: var(--color-slate-700);
+  --color-status-success: var(--color-emerald-400);
+  --color-status-warning: var(--color-amber-400);
+  --color-status-danger: var(--color-rose-500);
+  --color-status-info: var(--color-sky-400);
+  --color-status-neutral: var(--color-slate-400);
+
+  /* Global layout metrics */
   --nav-bottom-height: 56px;
+  --touch-target-min: 44px;
+  --touch-target-comfortable: 48px;
+  --header-height: 64px;
+
+  /* Typography */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  /* Motion */
+  --animate-pulse-ring: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-sheet-enter: sheet-enter 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-toast-in: toast-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes pulse-ring {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.55;
+      transform: scale(0.96);
+    }
+  }
+
+  @keyframes sheet-enter {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
 }
 
 :root {
   --nav-bottom-height: 56px;
+  --touch-target-min: 44px;
+  --touch-target-comfortable: 48px;
+  color-scheme: dark;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -19,4 +110,81 @@ body {
   min-height: 100vh;
   background-color: #0f172a;
   color: #f8fafc;
+  font-family: var(--font-sans);
+  overscroll-behavior-y: none;
+}
+
+/* Visible, high contrast focus ring for every interactive element. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-emerald-400);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+::selection {
+  background-color: color-mix(in oklab, var(--color-emerald-400) 35%, transparent);
+  color: #f8fafc;
+}
+
+/* Scrollbars tuned for the dark surface palette. */
+* {
+  scrollbar-color: #334155 transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #475569;
+}
+
+/* Screen-reader-only utility used across primitives. */
+.sr-only-focusable:not(:focus):not(:focus-within) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
