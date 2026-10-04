@@ -6,6 +6,13 @@
  * contracts at every breakpoint in the specification:
  *   360px, 390px, 430px, 768px, 1280px.
  *
+ * Each viewport runs in its own incognito browser context, so persisted
+ * localStorage state never leaks between runs.
+ *
+ * Phases 1-4 keep the contracts that were green when that phase landed;
+ * phase 5 is the contract for the assembled application shell and is what
+ * `pnpm run verify` executes by default.
+ *
  * Usage: node scripts/verify.mjs <phase>
  * Exit code 0 = all checks passed.
  */
