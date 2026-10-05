@@ -218,6 +218,23 @@ export function FilterSlideOver({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mode, isOpen, onClose]);
 
+  // Scroll lock. Without it the page behind the sheet keeps scrolling under the
+  // backdrop on touch devices, which reads as a gesture glitch. The previous
+  // inline value is captured and restored so nested locks never clobber each
+  // other, and unmounting mid-open cannot leave the document unscrollable.
+  useEffect(() => {
+    if (mode !== 'drawer' || !isOpen || typeof document === 'undefined') {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mode, isOpen]);
+
   if (mode === 'inline') {
     return (
       <aside

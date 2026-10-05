@@ -475,6 +475,27 @@ const PHASE_ASSERTIONS = {
       { type: 'assertCount', selector: '[data-testid="ledger-card-list"] li', minCount: 2, description: 'injected ledger entries loaded' },
       { type: 'expectDownload', selector: '[data-testid="earnings-export-csv"]', description: 'export the ledger' },
       { type: 'assertDownloadCsvSafe', description: 'no exported cell can be evaluated as a formula' },
+
+      // ---- CODE-01: notifications render vector primitives, not emoji ----
+      { type: 'click', selector: '[data-testid="nav-explorer"]', description: 'back to the explorer (desktop)', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="mobile-nav-explorer"]', description: 'back to the explorer (mobile)', maxWidth: 767 },
+      { type: 'dismissToasts', description: 'clear the toast queue' },
+      { type: 'click', selector: '[data-testid="notifications-button"]', description: 'open the notifications popover' },
+      { type: 'assertVisible', selector: '[data-testid="notifications-popover"]', description: 'popover opened' },
+      { type: 'assertCount', selector: '[data-testid="notifications-popover"] svg', minCount: 5, description: 'notification icons are inline SVG' },
+      { type: 'assertCount', selector: '[data-testid="notification-icon"]', minCount: 5, description: 'every notification carries an icon slot' },
+      { type: 'assertNoEmoji', selector: '[data-testid="notifications-list"]', description: 'notification list is free of pictographic glyphs' },
+      { type: 'press', key: 'Escape', description: 'close the popover' },
+      { type: 'waitForHidden', selector: '[data-testid="notifications-popover"]', description: 'popover closed' },
+      { type: 'assertNoEmoji', description: 'rendered document is free of pictographic glyphs' },
+
+      // ---- UI-01: the filter drawer locks the document behind it ----
+      { type: 'click', selector: '[data-testid="explorer-open-filters"]', description: 'open the filter drawer', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="filter-drawer-panel"]', description: 'filter drawer opened', maxWidth: 767 },
+      { type: 'assertBodyOverflow', expect: 'hidden', description: 'document scroll is locked behind the drawer', maxWidth: 767 },
+      { type: 'click', selector: '[data-testid="filter-drawer-close"]', description: 'close the filter drawer', maxWidth: 767 },
+      { type: 'waitForHidden', selector: '[data-testid="filter-drawer-panel"]', description: 'filter drawer closed', maxWidth: 767 },
+      { type: 'assertBodyOverflow', expect: 'visible', description: 'document scroll is restored after closing', maxWidth: 767 },
     ],
   },
 };

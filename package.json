@@ -8,8 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "verify": "pnpm run build && node scripts/verify.mjs 5 && node scripts/verify.mjs 6",
+    "verify": "pnpm run build && node scripts/lint-icons.mjs && node scripts/verify.mjs 5 && node scripts/verify.mjs 6",
     "verify:audit": "node scripts/verify.mjs 6",
+    "lint:icons": "node scripts/lint-icons.mjs",
     "verify:phase": "node scripts/verify.mjs"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { LayoutGrid, Plus, Search, SearchX, SlidersHorizontal } from 'lucide-react';
+import { LayoutGrid, Plus, Search, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { GigCard } from '../compound/GigCard';
 import { FilterSlideOver, describeFilters } from '../compound/FilterSlideOver';
@@ -88,7 +88,7 @@ export function GigExplorerGrid({
                     onClick={() => setFilters((previous) => ({ ...previous, searchQuery: '' }))}
                     className="inline-flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                   >
-                    ✕
+                    <X aria-hidden="true" className="size-4" />
                   </button>
                 ) : null
               }

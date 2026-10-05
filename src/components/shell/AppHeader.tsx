@@ -1,4 +1,16 @@
-import { Bell, LayoutDashboard, Search, Store, User, Wallet } from 'lucide-react';
+import {
+  Bell,
+  CreditCard,
+  LayoutDashboard,
+  Package,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Star,
+  Store,
+  User,
+  Wallet,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Avatar } from '../primitives/Avatar';
 import { Badge, SellerLevelBadge } from '../primitives/Badge';
@@ -34,11 +46,16 @@ const NAV_ITEMS: Record<SellerMode, { id: AppView; label: string }[]> = {
   ],
 };
 
-const NOTIFICATION_ICONS: Record<NotificationKind, string> = {
-  order: '📦',
-  revision: '🔁',
-  payout: '💳',
-  system: '✨',
+/**
+ * Notification kinds map to vector primitives rather than emoji: emoji render
+ * differently per platform, ignore `currentColor` and cannot be sized or
+ * labelled consistently across the design system.
+ */
+const NOTIFICATION_ICONS: Record<NotificationKind, typeof Package> = {
+  order: Package,
+  revision: RotateCcw,
+  payout: CreditCard,
+  system: Sparkles,
 };
 
 const MODE_OPTIONS: { id: SellerMode; label: string }[] = [
@@ -206,8 +223,16 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
                           notification.isRead ? 'opacity-70' : 'bg-emerald-500/5'
                         )}
                       >
-                        <span aria-hidden="true" className="text-base">
-                          {NOTIFICATION_ICONS[notification.kind]}
+                        <span
+                          aria-hidden="true"
+                          data-testid="notification-icon"
+                          data-notification-kind={notification.kind}
+                          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300"
+                        >
+                          {(() => {
+                            const Icon = NOTIFICATION_ICONS[notification.kind];
+                            return <Icon className="size-4" />;
+                          })()}
                         </span>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-100">{notification.title}</p>
@@ -261,8 +286,11 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
               <span className="block max-w-[9rem] truncate text-sm font-medium text-slate-100">
                 {currentUser.displayName}
               </span>
-              <span className="block text-[11px] text-slate-500">
-                {SELLER_LEVEL_LABELS[currentUser.level]} · {currentUser.rating.toFixed(2)}★
+              <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                {SELLER_LEVEL_LABELS[currentUser.level]}
+                <span aria-hidden="true">·</span>
+                <Star aria-hidden="true" className="size-3 fill-current" />
+                <span className="tabular">{currentUser.rating.toFixed(2)}</span>
               </span>
             </span>
           </button>
