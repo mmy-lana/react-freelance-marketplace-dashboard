@@ -37,6 +37,33 @@ function svgDataUri(svg: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg.replace(/\s{2,}/g, ' ').trim())}`;
 }
 
+/**
+ * Escapes the five XML metacharacters so untrusted text can never terminate a
+ * node, open an element or inject an entity into generated artwork.
+ *
+ * Every dynamic value embedded into an SVG template must pass through this
+ * function first; `encodeURIComponent` alone does not protect the markup,
+ * because the data URI still decodes to a well-formed XML document.
+ */
+export function escapeXml(unsafe: string): string {
+  return unsafe.replace(/[<>&'"]/g, (char) => {
+    switch (char) {
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '&':
+        return '&amp;';
+      case "'":
+        return '&apos;';
+      case '"':
+        return '&quot;';
+      default:
+        return char;
+    }
+  });
+}
+
 interface Palette {
   from: string;
   via: string;
@@ -58,6 +85,8 @@ const CATEGORY_PALETTE: Record<GigCategory, Palette> = {
 function buildThumbnail(label: string, glyph: string, palette: Palette, variant: number): string {
   const rotation = 18 + variant * 24;
   const radius = 120 - variant * 18;
+  const safeGlyph = escapeXml(glyph);
+  const safeLabel = escapeXml(label.slice(0, 26));
   return svgDataUri(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
       <defs>
@@ -75,14 +104,15 @@ function buildThumbnail(label: string, glyph: string, palette: Palette, variant:
       <rect width="800" height="500" fill="url(#s)"/>
       <circle cx="${180 + variant * 90}" cy="${330 - variant * 40}" r="${radius}" fill="${palette.ink}" fill-opacity="0.12"/>
       <circle cx="${620 - variant * 70}" cy="${120 + variant * 30}" r="${Math.round(radius * 0.55)}" fill="${palette.accent}" fill-opacity="0.22"/>
-      <text x="60" y="${250 - variant * 10}" font-family="Inter, Segoe UI, sans-serif" font-size="150" fill="${palette.ink}" fill-opacity="0.85">${glyph}</text>
-      <text x="60" y="330" font-family="Inter, Segoe UI, sans-serif" font-size="40" font-weight="700" fill="${palette.ink}">${label.slice(0, 26)}</text>
+      <text x="60" y="${250 - variant * 10}" font-family="Inter, Segoe UI, sans-serif" font-size="150" fill="${palette.ink}" fill-opacity="0.85">${safeGlyph}</text>
+      <text x="60" y="330" font-family="Inter, Segoe UI, sans-serif" font-size="40" font-weight="700" fill="${palette.ink}">${safeLabel}</text>
       <rect x="60" y="360" width="${160 + variant * 40}" height="8" rx="4" fill="${palette.accent}" fill-opacity="0.7"/>
     </svg>
   `);
 }
 
 function buildAvatar(initials: string, from: string, to: string): string {
+  const safeInitials = escapeXml(initials);
   return svgDataUri(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
       <defs>
@@ -92,7 +122,7 @@ function buildAvatar(initials: string, from: string, to: string): string {
         </linearGradient>
       </defs>
       <rect width="96" height="96" rx="48" fill="url(#a)"/>
-      <text x="48" y="60" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-size="34" font-weight="700" fill="#0f172a">${initials}</text>
+      <text x="48" y="60" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-size="34" font-weight="700" fill="#0f172a">${safeInitials}</text>
     </svg>
   `);
 }
@@ -751,6 +781,9 @@ const BUYERS = [
   { id: 'buyer-104', username: 'lena.brandt', avatarFrom: '#86efac', avatarTo: '#166534' },
   { id: 'buyer-105', username: 'omar.haddad', avatarFrom: '#c4b5fd', avatarTo: '#5b21b6' },
   { id: 'buyer-106', username: 'ruth.oyelaran', avatarFrom: '#67e8f9', avatarTo: '#155e75' },
+  // Index 6: the signed-in account also buys on the marketplace. Both personas
+  // share one identity, so buyer-mode authorization can be exercised for real.
+  { id: CURRENT_USER.id, username: CURRENT_USER.username, avatarFrom: '#34d399', avatarTo: '#0f766e' },
 ] as const;
 
 interface RequirementSeed {
@@ -947,6 +980,46 @@ const ORDER_SEEDS: OrderSeed[] = [
     quantity: 1,
     requirements: [{ question: 'Which product should the page sell?', answer: 'The analytics suite.' }],
     milestones: [{ title: 'Discovery', offsetDays: -27, isCompleted: true }],
+    fileNames: [],
+  },
+  // Purchases made by the signed-in account (buyerIndex 6). They belong to
+  // third-party sellers, so completing one must never credit the wallet.
+  {
+    gigKey: 'ui-dashboard',
+    tier: 'standard',
+    status: 'delivered',
+    buyerIndex: 6,
+    startOffsetDays: -9,
+    dueOffsetDays: 5,
+    deliveredOffsetDays: -1,
+    revisionTotal: 3,
+    revisionRemaining: 3,
+    quantity: 1,
+    requirements: [
+      { question: 'Which screens are in scope for the first milestone?', answer: 'Overview, revenue and retention.' },
+      { question: 'Is there a design system to extend?', answer: 'Yes, a Figma library with 48 components.' },
+    ],
+    milestones: [
+      { title: 'Discovery', offsetDays: -8, isCompleted: true },
+      { title: 'High fidelity screens', offsetDays: -1, isCompleted: true },
+    ],
+    fileNames: ['harbor-ui-kit.zip'],
+  },
+  {
+    gigKey: 'legal-localise',
+    tier: 'basic',
+    status: 'pending_requirements',
+    buyerIndex: 6,
+    startOffsetDays: -2,
+    dueOffsetDays: 8,
+    revisionTotal: 2,
+    revisionRemaining: 2,
+    quantity: 1,
+    requirements: [
+      { question: 'Which language pair do you need?', answer: '' },
+      { question: 'Is the source copy final?', answer: '' },
+    ],
+    milestones: [{ title: 'Terminology alignment', offsetDays: 1, isCompleted: false }],
     fileNames: [],
   },
 ];

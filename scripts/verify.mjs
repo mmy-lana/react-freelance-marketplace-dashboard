@@ -18,7 +18,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import puppeteer from 'puppeteer-core';
@@ -29,6 +29,13 @@ const BASE_URL = `http://127.0.0.1:${PORT}/`;
 const CHROME_PATH =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const OUTPUT_DIR = path.resolve('.verify', `phase-${PHASE}`);
+
+/** Persisted localStorage keys the audit assertions read back. */
+const STORAGE = {
+  profile: 'gighub:profile:v1',
+  orders: 'gighub:orders:v1',
+  ledger: 'gighub:ledger:v1',
+};
 
 const VIEWPORTS = [
   { name: '360', width: 360, height: 740, expectMobileNav: true },
@@ -260,6 +267,167 @@ const PHASE_ASSERTIONS = {
       { type: 'assertVisible', selector: '[data-testid="main-content"][data-active-view="explorer"]', description: 'explorer restored (desktop)', minWidth: 768 },
     ],
   },
+  /**
+   * Audit suite: the security, financial-integrity and domain-boundary
+   * contracts introduced by the hardening cycles. It runs the same browser
+   * matrix as the phase suites and re-uses the global console/overflow/image
+   * gates, so every assertion here is also an end-to-end check.
+   */
+  6: {
+    checks: [
+      { selector: '[data-testid="app-shell"]', description: 'App shell mounted' },
+      { selector: '[data-testid="main-content"][data-seller-mode="seller"]', description: 'seller mode is the default perspective' },
+      { selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'seed gigs rendered' },
+    ],
+    actions: [
+      // ---- SEC-01: object level authorization on the order lifecycle ----
+      { type: 'click', selector: '[data-testid="nav-orders"]', description: 'open the order queue (desktop)', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="mobile-nav-orders"]', description: 'open the order queue (mobile)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="order-queue"]', description: 'order queue rendered' },
+
+      // A seller must never be able to approve their own delivery.
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-003' },
+        save: true,
+        baseline: 'order-003-status',
+        description: 'capture the seller-owned delivery status',
+      },
+      { type: 'click', selector: '[data-testid="order-action-order-003"]', description: 'attempt to self-approve a delivered order' },
+      { type: 'assertVisible', selector: '[data-testid="toast"][data-tone="error"]', description: 'self-approval blocked with an error' },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-003' },
+        baseline: 'order-003-status',
+        description: 'seller-owned delivery status is unchanged',
+      },
+      { type: 'dismissToasts', description: 'clear the toast queue' },
+
+      // A buyer must never be able to drive the seller-side start of work.
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-010' },
+        save: true,
+        baseline: 'order-010-status',
+        description: 'capture the buyer purchase status',
+      },
+      { type: 'click', selector: '[data-testid="order-action-order-010"]', description: 'attempt a seller transition on a purchase' },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-010' },
+        baseline: 'order-010-status',
+        description: 'purchase status is unchanged',
+      },
+      { type: 'dismissToasts', description: 'clear the toast queue' },
+
+      // ---- FIN-01: revenue attribution ----
+      { type: 'assertStorageField', key: STORAGE.profile, field: 'totalEarnedCents', save: true, baseline: 'earned', description: 'capture lifetime earnings' },
+      { type: 'assertStorageField', key: STORAGE.profile, field: 'pendingClearanceCents', save: true, baseline: 'pending', description: 'capture pending clearance' },
+      { type: 'assertStorageField', key: STORAGE.profile, field: 'completedOrdersCount', save: true, baseline: 'completed', description: 'capture completed order count' },
+      { type: 'assertStorageField', key: STORAGE.ledger, field: '__length', save: true, baseline: 'ledger', description: 'capture ledger length' },
+      { type: 'click', selector: '[data-testid="order-action-order-009"]', description: 'buyer approves a third-party seller delivery' },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-009' },
+        expected: 'completed',
+        description: 'the buyer can complete their own purchase',
+      },
+      { type: 'assertStorageField', key: STORAGE.profile, field: 'totalEarnedCents', baseline: 'earned', description: 'buyer wallet is not credited for seller revenue' },
+      { type: 'assertStorageField', key: STORAGE.profile, field: 'pendingClearanceCents', baseline: 'pending', description: 'buyer clearance balance is untouched' },
+      { type: 'assertStorageField', key: STORAGE.profile, field: 'completedOrdersCount', baseline: 'completed', description: 'buyer order count is untouched' },
+      { type: 'assertStorageField', key: STORAGE.ledger, field: '__length', baseline: 'ledger', description: 'no ledger entry is appended for the buyer' },
+
+      // ---- DATA-01: atomic commit and rollback ----
+      { type: 'click', selector: '[data-testid="nav-explorer"]', description: 'back to the explorer (desktop)', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="mobile-nav-explorer"]', description: 'back to the explorer (mobile)', maxWidth: 767 },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.gigs,
+        field: 'status',
+        match: { id: 'gig-seo-authority' },
+        save: true,
+        baseline: 'gig-status',
+        description: 'capture the listing status',
+      },
+      { type: 'breakStorage', mode: 'on', description: 'make localStorage reject every write' },
+      { type: 'dismissToasts', description: 'clear the toast queue' },
+      { type: 'click', selector: '[data-testid="gig-toggle-gig-seo-authority"]', description: 'mutate while storage is failing' },
+      { type: 'wait', ms: 400, description: 'allow the transaction to reject and roll back' },
+      { type: 'assertVisible', selector: '[data-testid="toast"][data-tone="error"]', description: 'storage failure surfaced as an error' },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.gigs,
+        field: 'status',
+        match: { id: 'gig-seo-authority' },
+        baseline: 'gig-status',
+        description: 'persisted listing status is unchanged',
+      },
+      {
+        type: 'assertCount',
+        selector: '[data-gig-id="gig-seo-authority"] [data-testid="gig-status-paused"]',
+        maxCount: 0,
+        description: 'in-memory state rolled back to the last durable snapshot',
+      },
+      { type: 'breakStorage', mode: 'off', description: 'restore storage' },
+      { type: 'dismissToasts', description: 'clear the toast queue' },
+      { type: 'click', selector: '[data-testid="gig-toggle-gig-seo-authority"]', description: 'mutate again after recovery' },
+      {
+        type: 'assertCount',
+        selector: '[data-gig-id="gig-seo-authority"] [data-testid="gig-status-paused"]',
+        minCount: 1,
+        description: 'writes resume once storage recovers',
+      },
+
+      // ---- SEC-03: CSV formula injection ----
+      {
+        type: 'seedStorage',
+        key: STORAGE.ledger,
+        description: 'inject formula payloads into the ledger',
+        value: [
+          {
+            id: 'audit-ledger-001',
+            orderNumber: 'GH-9001A',
+            gigTitle: '=SUM(1+9)*cmd|\' /C calc\'!A0',
+            grossCents: 1000,
+            feeCents: 200,
+            netCents: 800,
+            createdAt: '2026-01-02T10:00:00.000Z',
+            availableAt: '2026-01-09T10:00:00.000Z',
+            status: 'pending_clearance',
+            method: 'Wise 4821',
+          },
+          {
+            id: 'audit-ledger-002',
+            orderNumber: 'GH-9002B',
+            gigTitle: '@SUM(1+1)*cmd',
+            grossCents: 2000,
+            feeCents: 300,
+            netCents: 1700,
+            createdAt: '2026-01-02T11:00:00.000Z',
+            availableAt: '2026-01-09T11:00:00.000Z',
+            status: 'available',
+            method: 'Wise 4821',
+          },
+        ],
+      },
+      { type: 'click', selector: '[data-testid="nav-earnings"]', description: 'open earnings (desktop)', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="mobile-nav-earnings"]', description: 'open earnings (mobile)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="earnings-view"]', description: 'earnings workspace rendered' },
+      { type: 'assertCount', selector: '[data-testid="ledger-card-list"] li', minCount: 2, description: 'injected ledger entries loaded' },
+      { type: 'expectDownload', selector: '[data-testid="earnings-export-csv"]', description: 'export the ledger' },
+      { type: 'assertDownloadCsvSafe', description: 'no exported cell can be evaluated as a formula' },
+    ],
+  },
 };
 
 const failures = [];
@@ -267,6 +435,51 @@ const notes = [];
 
 function recordFailure(scope, message) {
   failures.push(`[${scope}] ${message}`);
+}
+
+/**
+ * Minimal RFC 4180 field splitter used to inspect an exported ledger.
+ * Quoted cells keep their escaped content so the scan sees real cell values
+ * rather than fragments of a row.
+ */
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (inQuotes) {
+      if (character === '"') {
+        if (text[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += character;
+      }
+    } else if (character === '"') {
+      inQuotes = true;
+    } else if (character === ',') {
+      row.push(field);
+      field = '';
+    } else if (character === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else if (character !== '\r') {
+      field += character;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
 }
 
 /** Resolves the first *visible* DOM node matching a selector. */
@@ -335,12 +548,23 @@ async function run() {
   const preview = spawn(
     process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
     ['exec', 'vite', 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'],
-    { stdio: ['ignore', 'pipe', 'pipe'] }
+    // Own process group so the whole pnpm -> vite tree can be torn down; killing
+    // only the wrapper leaves the server holding stdout open and hangs the run.
+    { stdio: ['ignore', 'pipe', 'pipe'], detached: true }
   );
   preview.stdout.on('data', (chunk) => process.stdout.write(`[preview] ${chunk}`));
   preview.stderr.on('data', (chunk) => process.stderr.write(`[preview:err] ${chunk}`));
 
-  let browser;
+  /** Terminates the preview process group and releases the event loop. */
+const stopPreview = () => {
+  try {
+    process.kill(-preview.pid, 'SIGTERM');
+  } catch {
+    preview.kill('SIGTERM');
+  }
+};
+
+let browser;
   try {
     await waitForServer(BASE_URL);
 
@@ -367,6 +591,9 @@ async function run() {
 
       const consoleErrors = [];
       const failedRequests = [];
+      // Per-viewport scratch space for assertions that compare across steps.
+      const baselines = new Map();
+      let lastDownload = null;
       page.on('console', (message) => {
         if (message.type() === 'error') {
           consoleErrors.push(message.text());
@@ -594,6 +821,8 @@ async function run() {
               }
               if (files.length === 0) {
                 recordFailure(scope, `expected a ${action.extension ?? '.csv'} download (${action.description})`);
+              } else {
+                lastDownload = files.sort().at(-1);
               }
               break;
             }
@@ -601,6 +830,179 @@ async function run() {
               const count = await page.$$eval(action.selector, (nodes) => nodes.length);
               if (count > 0) {
                 recordFailure(scope, `unexpected ${count} match(es) for "${action.selector}" (${action.description})`);
+              }
+              break;
+            }
+            case 'assertTextAbsent': {
+              const count = await page.$$eval(action.selector, (nodes) => nodes.length);
+              if (count === 0) {
+                recordFailure(scope, `"${action.selector}" was not rendered (${action.description})`);
+                break;
+              }
+              const text = await page.$eval(action.selector, (node) => node.textContent ?? '');
+              if (text.includes(action.value)) {
+                recordFailure(
+                  scope,
+                  `"${action.selector}" contains forbidden text "${action.value}" (${action.description}), found "${text.trim()}"`
+                );
+              }
+              break;
+            }
+            case 'assertNoEmoji': {
+              const found = await page.evaluate((selector) => {
+                const emoji = /\p{Extended_Pictographic}/u;
+                const scopeNode = selector ? document.querySelector(selector) : document.body;
+                if (scopeNode === null) {
+                  return [`selector "${selector}" is not in the DOM`];
+                }
+                const hits = [];
+                const scan = (text, label) => {
+                  for (const character of text ?? '') {
+                    if (emoji.test(character)) {
+                      hits.push(`${label} U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+                      return;
+                    }
+                  }
+                };
+                scan(scopeNode.innerText, 'text');
+                scan(scopeNode.innerHTML, 'markup');
+                return hits;
+              }, action.selector ?? null);
+              if (found.length > 0) {
+                recordFailure(
+                  scope,
+                  `emoji or pictographic glyphs found in ${action.selector ?? 'document.body'}: ${found.join(', ')} (${action.description})`
+                );
+              }
+              break;
+            }
+            case 'assertBodyOverflow': {
+              const overflow = await page.evaluate(() => window.getComputedStyle(document.body).overflow);
+              const locked = overflow === 'hidden';
+              if (action.expect === 'hidden' && !locked) {
+                recordFailure(scope, `expected document.body overflow hidden (${action.description}), found "${overflow}"`);
+              }
+              if (action.expect === 'visible' && locked) {
+                recordFailure(scope, `expected document.body scroll restored (${action.description}), still locked`);
+              }
+              break;
+            }
+            case 'seedStorage': {
+              await page.evaluate(
+                ({ key, value }) => {
+                  window.localStorage.setItem(key, value);
+                },
+                { key: action.key, value: JSON.stringify(action.value) }
+              );
+              await page.reload({ waitUntil: 'networkidle0', timeout: 30_000 });
+              await page.waitForSelector('[data-testid="app-shell"]', { timeout: 15_000 });
+              await new Promise((resolve) => setTimeout(resolve, 400));
+              break;
+            }
+            case 'assertStorageField': {
+              const value = await page.evaluate(
+                ({ key, field, target, match }) => {
+                  const raw = window.localStorage.getItem(key);
+                  if (raw === null) {
+                    return null;
+                  }
+                  let parsed;
+                  try {
+                    parsed = JSON.parse(raw);
+                  } catch {
+                    return null;
+                  }
+                  if (field === '__length') {
+                    return Array.isArray(parsed) ? parsed.length : null;
+                  }
+                  if (Array.isArray(parsed)) {
+                    if (match === null) {
+                      return target;
+                    }
+                    const entry = parsed.find((candidate) =>
+                      Object.entries(match).every(([matchKey, matchValue]) => candidate?.[matchKey] === matchValue)
+                    );
+                    return entry?.[field] ?? null;
+                  }
+                  return parsed?.[field] ?? null;
+                },
+                { key: action.key, field: action.field, target: action.value, match: action.match ?? null }
+              );
+
+              if (action.save) {
+                baselines.set(action.baseline, value);
+                break;
+              }
+              if (action.expected !== undefined) {
+                if (value !== action.expected) {
+                  recordFailure(
+                    scope,
+                    `${action.key}${action.field === '__length' ? ' length' : `.${action.field}`} is ${JSON.stringify(
+                      value
+                    )}, expected ${JSON.stringify(action.expected)} (${action.description})`
+                  );
+                }
+                break;
+              }
+              if (!baselines.has(action.baseline)) {
+                recordFailure(scope, `no baseline "${action.baseline}" was captured (${action.description})`);
+                break;
+              }
+              const before = baselines.get(action.baseline);
+              if (value !== before) {
+                recordFailure(
+                  scope,
+                  `${action.key}${action.field === '__length' ? ' length' : `.${action.field}`} moved from ${JSON.stringify(
+                    before
+                  )} to ${JSON.stringify(value)} (${action.description})`
+                );
+              }
+              break;
+            }
+            case 'breakStorage': {
+              await page.evaluate((shouldBreak) => {
+                const prototype = Storage.prototype;
+                if (shouldBreak) {
+                  // Keep the native method so it can be restored exactly.
+                  prototype.__nativeSetItem = prototype.setItem;
+                  prototype.setItem = function blockedSetItem() {
+                    throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+                  };
+                } else {
+                  prototype.setItem = prototype.__nativeSetItem;
+                  delete prototype.__nativeSetItem;
+                }
+              }, action.mode === 'on');
+              break;
+            }
+            case 'dismissToasts': {
+              const dismissers = await page.$$('[data-testid="toast"] button[aria-label^="Dismiss notification"]');
+              for (const dismisser of dismissers) {
+                await dismisser.click();
+              }
+              await new Promise((resolve) => setTimeout(resolve, 200));
+              break;
+            }
+            case 'assertDownloadCsvSafe': {
+              const directory = path.join(OUTPUT_DIR, 'downloads');
+              if (!lastDownload) {
+                recordFailure(scope, `no download captured before the CSV safety scan (${action.description})`);
+                break;
+              }
+              const content = await readFile(path.join(directory, lastDownload), 'utf8');
+              const offenders = [];
+              parseCsvRows(content).forEach((row, rowIndex) => {
+                row.forEach((cell, cellIndex) => {
+                  if (/^[=+\-@\t\r]/.test(cell)) {
+                    offenders.push(`row ${rowIndex + 1} col ${cellIndex + 1} = ${JSON.stringify(cell.slice(0, 40))}`);
+                  }
+                });
+              });
+              if (offenders.length > 0) {
+                recordFailure(
+                  scope,
+                  `CSV formula injection not neutralised in ${lastDownload}: ${offenders.slice(0, 4).join(' ; ')}`
+                );
               }
               break;
             }
@@ -637,8 +1039,27 @@ async function run() {
         );
       }
 
-      // 8. Touch target sizing on mobile viewports.
+      // 8. Touch target sizing on mobile viewports. Measurements run only after
+      //    every running animation has settled, otherwise an element caught mid
+      // entrance transition reports a transient box.
       if (viewport.expectMobileNav) {
+        await page.evaluate(async (budget) => {
+          if (typeof document.getAnimations !== 'function') {
+            return;
+          }
+          const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const finite = document.getAnimations().filter((animation) => {
+            const timing = animation.effect?.getComputedTiming?.();
+            return timing !== undefined && timing.iterations !== Infinity;
+          });
+          // Infinite animations (pulses, spinners) never settle, so the whole
+          // wait is bounded by the budget.
+          await Promise.race([
+            Promise.all(finite.map((animation) => animation.finished.catch(() => undefined))),
+            settle(budget),
+          ]);
+        }, 800);
+        await new Promise((resolve) => setTimeout(resolve, 200));
         const smallTargets = await page.evaluate(() => {
           const results = [];
           const elements = Array.from(document.querySelectorAll('button, a[href], input, select, [role="button"]'));
@@ -648,10 +1069,16 @@ async function run() {
               continue;
             }
             if (rect.height < 44) {
-              const label = (element.textContent ?? element.getAttribute('aria-label') ?? element.tagName)
-                .trim()
-                .slice(0, 40);
-              results.push(`${label} (${Math.round(rect.width)}x${Math.round(rect.height)})`);
+              const text = (element.textContent ?? '').trim().slice(0, 40);
+              const identity = [
+                element.tagName.toLowerCase(),
+                element.getAttribute('data-testid') ?? '',
+                element.getAttribute('aria-label') ?? '',
+                text,
+              ]
+                .filter(Boolean)
+                .join(' ');
+              results.push(`${identity || element.className.toString().slice(0, 40)} (${Math.round(rect.width)}x${Math.round(rect.height)})`);
             }
           }
           return results.slice(0, 10);
@@ -670,7 +1097,7 @@ async function run() {
     if (browser) {
       await browser.close();
     }
-    preview.kill('SIGTERM');
+    stopPreview();
   }
 
   console.log('\n=== headless verification summary ===');

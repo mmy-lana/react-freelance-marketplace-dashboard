@@ -147,6 +147,136 @@ function writeStorage(key: string, value: unknown): Promise<void> {
   });
 }
 
+/** Every collection that participates in a single atomic persistence transaction. */
+interface MarketplaceSnapshot {
+  gigs: GigItem[];
+  orders: OrderItem[];
+  profile: UserProfile;
+  ledger: LedgerEntry[];
+  notifications: NotificationItem[];
+  sellerMode: SellerMode;
+  filters: GigFilterState;
+}
+
+const SNAPSHOT_STORAGE_ENTRIES: readonly (keyof MarketplaceSnapshot)[] = [
+  'gigs',
+  'orders',
+  'profile',
+  'ledger',
+  'notifications',
+  'sellerMode',
+  'filters',
+];
+
+const SNAPSHOT_STORAGE_KEYS: Record<keyof MarketplaceSnapshot, string> = {
+  gigs: STORAGE_KEYS.gigs,
+  orders: STORAGE_KEYS.orders,
+  profile: STORAGE_KEYS.profile,
+  ledger: STORAGE_KEYS.ledger,
+  notifications: STORAGE_KEYS.notifications,
+  sellerMode: STORAGE_KEYS.sellerMode,
+  filters: STORAGE_KEYS.filters,
+};
+
+/**
+ * Commits every collection as one transaction.
+ *
+ * Writes run back to back inside a single microtask, so a multi-entity mutation
+ * (order status, ledger entry and wallet balance) either lands completely or
+ * not at all — partial writes can no longer leave storage inconsistent.
+ */
+async function commitSnapshot(snapshot: MarketplaceSnapshot): Promise<void> {
+  for (const field of SNAPSHOT_STORAGE_ENTRIES) {
+    await writeStorage(SNAPSHOT_STORAGE_KEYS[field], snapshot[field]);
+  }
+}
+
+function isSameSnapshot(previous: MarketplaceSnapshot | null, next: MarketplaceSnapshot): boolean {
+  if (previous === null) {
+    return false;
+  }
+  return SNAPSHOT_STORAGE_ENTRIES.every((field) => previous[field] === next[field]);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Order authorization (SEC-01 / FIN-01)                                       */
+/* -------------------------------------------------------------------------- */
+
+/** The two personas a marketplace account can act as on a single order. */
+export type OrderActorRole = 'seller' | 'buyer';
+
+/**
+ * Which persona owns each terminal transition of the order lifecycle.
+ *
+ * - sellers fulfil work: `in_progress`, `delivered`
+ * - buyers approve it: `completed`, `revision`
+ * - either party may walk away from an order: `cancelled`
+ */
+export const ORDER_TRANSITION_ROLES: Record<OrderStatus, readonly OrderActorRole[]> = {
+  pending_requirements: [],
+  in_progress: ['seller'],
+  delivered: ['seller'],
+  revision: ['buyer'],
+  completed: ['buyer'],
+  cancelled: ['seller', 'buyer'],
+};
+
+/** Resolves the acting persona for an order, or `null` when the actor has no relationship to it. */
+export function resolveOrderRole(order: OrderItem, actorId: string): OrderActorRole | null {
+  if (order.sellerId === actorId) {
+    return 'seller';
+  }
+  if (order.buyerId === actorId) {
+    return 'buyer';
+  }
+  return null;
+}
+
+export interface AuthorizationResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Object-level authorization for every order status mutation.
+ *
+ * A transition is allowed only when the actor is a party to the order *and*
+ * holds the persona that owns the target status. Buyers can never deliver,
+ * sellers can never approve their own work, and third parties can never
+ * touch an order at all.
+ */
+export function authorizeOrderTransition(
+  order: OrderItem,
+  newStatus: OrderStatus,
+  actorId: string
+): AuthorizationResult {
+  const role = resolveOrderRole(order, actorId);
+  if (role === null) {
+    return { ok: false, error: 'Unauthorized: this order does not belong to your account.' };
+  }
+
+  const requiredRoles = ORDER_TRANSITION_ROLES[newStatus];
+
+  // Self-dealing guard: an account that is both parties on the same order still
+  // may not approve or dispute its own delivery.
+  if ((newStatus === 'completed' || newStatus === 'revision') && order.sellerId === actorId) {
+    return {
+      ok: false,
+      error:
+        newStatus === 'completed'
+          ? 'Unauthorized: sellers cannot approve their own deliveries.'
+          : 'Unauthorized: sellers cannot request revisions on their own deliveries.',
+    };
+  }
+
+  if (requiredRoles.length > 0 && !requiredRoles.includes(role)) {
+    const owner = requiredRoles[0] === 'seller' ? 'the assigned seller' : 'the buyer';
+    return { ok: false, error: `Unauthorized: only ${owner} can move an order to "${newStatus}".` };
+  }
+
+  return { ok: true };
+}
+
 interface HydratedState {
   gigs: GigItem[];
   orders: OrderItem[];
@@ -338,47 +468,53 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
   const storageReports = hydrated.current?.reports ?? [];
   const hydrationSource = hydrated.current?.source ?? 'seed';
 
-  // Persist every collection write; a storage failure surfaces as a toast and
-  // leaves in-memory state untouched so the next successful write recovers.
+  // Single transaction boundary for the whole store. Every state change is
+  // committed as one unit; if any key fails to persist, the entire in-memory
+  // state rolls back to the last durable snapshot instead of drifting.
+  const committedSnapshot = useRef<MarketplaceSnapshot | null>(null);
+
   useEffect(() => {
-    void writeStorage(STORAGE_KEYS.gigs, gigs).catch(() => {
+    const next: MarketplaceSnapshot = {
+      gigs,
+      orders,
+      profile,
+      ledger,
+      notifications,
+      sellerMode,
+      filters,
+    };
+
+    const previous = committedSnapshot.current;
+    if (isSameSnapshot(previous, next)) {
+      return;
+    }
+
+    committedSnapshot.current = next;
+
+    void commitSnapshot(next).catch(() => {
+      // A newer transaction already superseded this one: nothing to roll back.
+      if (committedSnapshot.current !== next) {
+        return;
+      }
+      committedSnapshot.current = previous;
+
+      if (previous !== null) {
+        setGigs(previous.gigs);
+        setOrders(previous.orders);
+        setProfile(previous.profile);
+        setLedger(previous.ledger);
+        setNotifications(previous.notifications);
+        setSellerModeState(previous.sellerMode);
+        setFiltersState(previous.filters);
+      }
+
       pushToast({
         tone: 'error',
-        title: 'Could not save gigs',
-        description: 'Local storage rejected the write. Your changes are kept in memory only.',
+        title: 'Changes were not saved',
+        description: 'Local storage rejected the write, so every pending change was rolled back.',
       });
     });
-  }, [gigs, pushToast]);
-
-  useEffect(() => {
-    void writeStorage(STORAGE_KEYS.orders, orders).catch(() => {
-      pushToast({
-        tone: 'error',
-        title: 'Could not save orders',
-        description: 'Local storage rejected the write. Your changes are kept in memory only.',
-      });
-    });
-  }, [orders, pushToast]);
-
-  useEffect(() => {
-    void writeStorage(STORAGE_KEYS.profile, profile).catch(() => undefined);
-  }, [profile]);
-
-  useEffect(() => {
-    void writeStorage(STORAGE_KEYS.ledger, ledger).catch(() => undefined);
-  }, [ledger]);
-
-  useEffect(() => {
-    void writeStorage(STORAGE_KEYS.notifications, notifications).catch(() => undefined);
-  }, [notifications]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.sellerMode, sellerMode).catch(() => undefined);
-  }, [sellerMode]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.filters, filters).catch(() => undefined);
-  }, [filters]);
+  }, [gigs, orders, profile, ledger, notifications, sellerMode, filters, pushToast]);
 
   const debouncedSearchQuery = useDebounce(filters.searchQuery, SEARCH_DEBOUNCE_MS);
 
@@ -496,6 +632,13 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
         };
       }
 
+      // Object-level authorization runs before the state machine: knowing an id
+      // is never enough to move an order.
+      const authorization = authorizeOrderTransition(order, newStatus, profile.id);
+      if (!authorization.ok) {
+        return { ok: false, error: authorization.error };
+      }
+
       const nowIso = new Date().toISOString();
       const updated: OrderItem = {
         ...order,
@@ -507,7 +650,10 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
 
       setOrders((previous) => previous.map((candidate) => (candidate.id === orderId ? updated : candidate)));
 
-      if (newStatus === 'completed') {
+      // FIN-01: revenue is credited to the seller who actually performed the
+      // work. A buyer approving a third-party seller only releases the escrow,
+      // it never populates the buyer's own wallet or ledger.
+      if (newStatus === 'completed' && order.sellerId === profile.id) {
         const netCents = order.netRevenueCents;
         setLedger((previous) => [
           {
@@ -540,7 +686,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
 
       return { ok: true, data: updated };
     },
-    [orders, pushToast]
+    [orders, profile.id, pushToast]
   );
 
   const deliverOrder = useCallback(
@@ -548,6 +694,9 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       const order = orders.find((candidate) => candidate.id === orderId);
       if (!order) {
         return { ok: false, error: 'That order no longer exists.' };
+      }
+      if (order.sellerId !== profile.id) {
+        return { ok: false, error: 'Unauthorized: Only the assigned seller can deliver work.' };
       }
       if (!ORDER_STATUS_TRANSITIONS[order.status].includes('delivered')) {
         return { ok: false, error: `Files can only be attached to orders in "in_progress" or "revision".` };
@@ -588,7 +737,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
 
       return { ok: true, data: updated };
     },
-    [orders, pushToast]
+    [orders, profile.id, pushToast]
   );
 
   const requestRevision = useCallback(
@@ -596,6 +745,12 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       const order = orders.find((candidate) => candidate.id === orderId);
       if (!order) {
         return { ok: false, error: 'That order no longer exists.' };
+      }
+      if (order.sellerId === profile.id) {
+        return { ok: false, error: 'Unauthorized: Sellers cannot request revisions on their own deliveries.' };
+      }
+      if (order.buyerId !== profile.id) {
+        return { ok: false, error: 'Unauthorized: Only the buyer can request a revision on this order.' };
       }
       if (!ORDER_STATUS_TRANSITIONS[order.status].includes('revision')) {
         return { ok: false, error: 'Only delivered orders can receive a revision request.' };
@@ -631,7 +786,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
 
       return { ok: true, data: updated };
     },
-    [orders, pushToast]
+    [orders, profile.id, pushToast]
   );
 
   const promoteSellerIfEligible = useCallback((): MutationResult<UserProfile> => {

@@ -24,9 +24,24 @@ const STATUS_LABELS: Record<LedgerEntry['status'], string> = {
   refunded: 'Refunded',
 };
 
-function escapeCsvValue(value: string | number): string {
+/**
+ * Characters a spreadsheet treats as the start of a formula (CWE-1236).
+ * A leading `=` is the obvious case, but `+`, `-` and `@` are equally
+ * dangerous, as are the control characters that survive a quote.
+ */
+const FORMULA_TRIGGERS = new Set(['=', '+', '-', '@', '\t', '\r']);
+
+/**
+ * Escapes one CSV cell.
+ *
+ * Quotes and separators are neutralised first, then a formula trigger at the
+ * start of the value is defused with a leading apostrophe, which spreadsheets
+ * render as literal text instead of evaluating.
+ */
+export function escapeCsvValue(value: string | number): string {
   const text = String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  const sanitized = FORMULA_TRIGGERS.has(text.charAt(0)) ? `'${text}` : text;
+  return /[",\n\r]/.test(sanitized) ? `"${sanitized.replace(/"/g, '""')}"` : sanitized;
 }
 
 function buildLedgerCsv(entries: LedgerEntry[]): string {
