@@ -1,5 +1,5 @@
 import { Paperclip, RefreshCcw, Send, Upload } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { CountdownClock } from '../compound/CountdownClock';
 import { OrderCardItem } from '../compound/OrderCardItem';
 import { OrderRowItem } from '../compound/OrderRowItem';
@@ -8,7 +8,12 @@ import { Badge } from '../primitives/Badge';
 import { Button } from '../primitives/Button';
 import { Modal } from '../primitives/Modal';
 import { Tabs, type TabItem } from '../primitives/Tabs';
-import { useMarketplace, type DeliveryFileInput } from '../../context/MarketplaceContext';
+import {
+  canBuyerRequestRevision,
+  resolvePrimaryTransition,
+  useMarketplace,
+  type DeliveryFileInput,
+} from '../../context/MarketplaceContext';
 import { useToast } from '../../context/ToastContext';
 import {
   DELIVERY_CONSTRAINTS,
@@ -32,7 +37,7 @@ const TAB_MATCHERS: Record<QueueTab, (order: OrderItem) => boolean> = {
 };
 
 export interface OrderManagementQueueProps {
-  /** Restricts the queue to a subset of orders (e.g. seller-owned only). */
+  /** Restricts the queue to a subset of orders; defaults to the active persona's orders. */
   orders?: OrderItem[];
   title?: string;
   /** Hides the tab switcher when the host view already filters the list. */
@@ -43,30 +48,66 @@ export interface OrderManagementQueueProps {
 /**
  * Responsive order lifecycle queue.
  *
- * Renders `OrderRowItem` rows from 768px up and `OrderCardItem` cards below it,
- * with delivery and revision dialogs wired to the guarded context mutations.
+ * The queue is a persona-scoped workspace: sellers see the orders they fulfil
+ * and their fulfillment CTAs, buyers see their purchases and their approval
+ * CTAs. Renders `OrderRowItem` rows from 768px up and `OrderCardItem` cards
+ * below it, with delivery, revision and requirements dialogs wired to the
+ * guarded context mutations.
  */
 export function OrderManagementQueue({
   orders,
-  title = 'Order queue',
+  title,
   hideTabs = false,
   className,
 }: OrderManagementQueueProps): React.JSX.Element {
-  const { orders: allOrders, updateOrderStatus, deliverOrder, requestRevision } = useMarketplace();
+  const {
+    gigs,
+    sellerOrders,
+    buyerOrders,
+    sellerMode,
+    updateOrderStatus,
+    deliverOrder,
+    requestRevision,
+    submitRequirements,
+  } = useMarketplace();
   const { pushToast } = useToast();
+
+  const audience = sellerMode;
+  const defaultTitle = audience === 'seller' ? 'Incoming orders' : 'My purchases';
+  const heading = title ?? defaultTitle;
 
   const [activeTab, setActiveTab] = useState<QueueTab>('active');
   const [deliveryOrder, setDeliveryOrder] = useState<OrderItem | null>(null);
   const [revisionOrder, setRevisionOrder] = useState<OrderItem | null>(null);
   const [revisionNote, setRevisionNote] = useState('');
   const [revisionError, setRevisionError] = useState<string | undefined>(undefined);
+  const [requirementsOrder, setRequirementsOrder] = useState<OrderItem | null>(null);
+  const [requirementDrafts, setRequirementDrafts] = useState<Record<string, string>>({});
+  const [requirementsError, setRequirementsError] = useState<string | undefined>(undefined);
   const [pendingFiles, setPendingFiles] = useState<DeliveryFileInput[]>([]);
   const [deliveryError, setDeliveryError] = useState<string | undefined>(undefined);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const source = orders ?? allOrders;
+  // Persona partition: a seller never sees a purchase and a buyer never sees
+  // somebody else's fulfilment queue.
+  const source = orders ?? (audience === 'seller' ? sellerOrders : buyerOrders);
   const visibleOrders = useMemo(() => source.filter(TAB_MATCHERS[activeTab]), [source, activeTab]);
+
+  const sellerNameFor = useMemo(() => {
+    const bySellerId = new Map<string, string>();
+    for (const gig of gigs) {
+      if (!bySellerId.has(gig.sellerId)) {
+        bySellerId.set(gig.sellerId, gig.seller.displayName);
+      }
+    }
+    return (order: OrderItem): string => bySellerId.get(order.sellerId) ?? 'Marketplace seller';
+  }, [gigs]);
+
+  const counterpartyFor = useCallback(
+    (order: OrderItem): string => (audience === 'seller' ? order.buyerUsername : sellerNameFor(order)),
+    [audience, sellerNameFor]
+  );
 
   const tabItems = useMemo<TabItem<QueueTab>[]>(
     () => [
@@ -107,6 +148,17 @@ export function OrderManagementQueue({
     }
   };
 
+  const openRevisionDialog = (orderId: string): void => {
+    const order = source.find((candidate) => candidate.id === orderId);
+    if (!order) {
+      pushToast({ tone: 'error', title: 'Order unavailable', description: 'That order is no longer in the queue.' });
+      return;
+    }
+    setRevisionOrder(order);
+    setRevisionNote('');
+    setRevisionError(undefined);
+  };
+
   const handleRevision = (): void => {
     if (!revisionOrder) {
       return;
@@ -125,10 +177,43 @@ export function OrderManagementQueue({
     setRevisionOrder(null);
   };
 
+  const openRequirementsDialog = (orderId: string): void => {
+    const order = source.find((candidate) => candidate.id === orderId);
+    if (!order) {
+      pushToast({ tone: 'error', title: 'Order unavailable', description: 'That order is no longer in the queue.' });
+      return;
+    }
+    setRequirementsOrder(order);
+    setRequirementDrafts(
+      Object.fromEntries(order.requirements.map((requirement) => [requirement.id, requirement.answerText ?? '']))
+    );
+    setRequirementsError(undefined);
+  };
+
+  const handleSubmitRequirements = (): void => {
+    if (!requirementsOrder) {
+      return;
+    }
+    const result = submitRequirements(requirementsOrder.id, requirementDrafts);
+    if (!result.ok) {
+      setRequirementsError(result.error ?? 'The requirements could not be submitted.');
+      return;
+    }
+    setRequirementsOrder(null);
+    setRequirementDrafts({});
+    setRequirementsError(undefined);
+  };
+
   const handleTransition = (orderId: string, status: OrderStatus): void => {
     const order = source.find((candidate) => candidate.id === orderId);
     if (!order) {
       pushToast({ tone: 'error', title: 'Order unavailable', description: 'That order is no longer in the queue.' });
+      return;
+    }
+
+    // The buyer answers the questionnaire before work can begin.
+    if (audience === 'buyer' && status === 'in_progress' && order.status === 'pending_requirements') {
+      openRequirementsDialog(orderId);
       return;
     }
 
@@ -150,15 +235,23 @@ export function OrderManagementQueue({
   const totalValue = visibleOrders.reduce((sum, order) => sum + order.netRevenueCents, 0);
 
   return (
-    <section data-testid="order-queue" className={cn('w-full', className)}>
+    <section
+      data-testid="order-queue"
+      data-audience={audience}
+      data-scope={orders === undefined ? 'persona' : 'explicit'}
+      className={cn('w-full', className)}
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-white">{title}</h2>
+          <h2 className="text-base font-semibold text-white">{heading}</h2>
           <p className="text-xs text-slate-400">
             <span className="tabular" data-testid="queue-count">
               {visibleOrders.length}
             </span>{' '}
-            orders · {formatCentsToUsd(totalValue)} net revenue
+            orders ·{' '}
+            {audience === 'seller'
+              ? `${formatCentsToUsd(totalValue)} net revenue`
+              : `${formatCentsToUsd(visibleOrders.reduce((sum, order) => sum + order.amountCents, 0))} total spent`}
           </p>
         </div>
         {hideTabs ? null : (
@@ -181,7 +274,9 @@ export function OrderManagementQueue({
           <Send aria-hidden="true" className="size-9 text-slate-600" />
           <h3 className="text-sm font-semibold text-white">Nothing in this queue</h3>
           <p className="max-w-sm text-xs text-slate-400">
-            Orders appear here as soon as a buyer purchases one of your gigs.
+            {audience === 'seller'
+              ? 'Orders appear here as soon as a buyer purchases one of your gigs.'
+              : 'Orders appear here as soon as you purchase a gig from the marketplace.'}
           </p>
         </div>
       ) : (
@@ -216,7 +311,15 @@ export function OrderManagementQueue({
               </thead>
               <tbody>
                 {visibleOrders.map((order) => (
-                  <OrderRowItem key={order.id} order={order} onTransition={handleTransition} onOpen={() => setExpandedOrderId(order.id)} />
+                  <OrderRowItem
+                    key={order.id}
+                    order={order}
+                    audience={audience}
+                    counterpartyName={counterpartyFor(order)}
+                    onTransition={handleTransition}
+                    onRequestRevision={openRevisionDialog}
+                    onOpen={() => setExpandedOrderId(order.id)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -224,20 +327,30 @@ export function OrderManagementQueue({
 
           <div className="space-y-3 md:hidden">
             {visibleOrders.map((order) => (
-              <OrderCardItem key={order.id} order={order} onTransition={handleTransition} onOpen={() => setExpandedOrderId(order.id)} />
+              <OrderCardItem
+                key={order.id}
+                order={order}
+                audience={audience}
+                counterpartyName={counterpartyFor(order)}
+                onTransition={handleTransition}
+                onRequestRevision={openRevisionDialog}
+                onOpen={() => setExpandedOrderId(order.id)}
+              />
             ))}
           </div>
 
           {expandedOrderId ? (
             <OrderDetailPanel
               order={visibleOrders.find((order) => order.id === expandedOrderId) ?? null}
+              audience={audience}
+              counterpartyName={
+                visibleOrders.find((order) => order.id === expandedOrderId)
+                  ? counterpartyFor(visibleOrders.find((order) => order.id === expandedOrderId) as OrderItem)
+                  : undefined
+              }
               onClose={() => setExpandedOrderId(null)}
-              onRequestRevision={(order) => {
-                setExpandedOrderId(null);
-                setRevisionOrder(order);
-                setRevisionNote('');
-                setRevisionError(undefined);
-              }}
+              onRequestRevision={openRevisionDialog}
+              onTransition={handleTransition}
             />
           ) : null}
         </>
@@ -382,6 +495,64 @@ export function OrderManagementQueue({
           ) : null}
         </div>
       </Modal>
+
+      <Modal
+        isOpen={requirementsOrder !== null}
+        onClose={() => {
+          setRequirementsOrder(null);
+          setRequirementsError(undefined);
+        }}
+        title={requirementsOrder ? `Requirements for ${requirementsOrder.orderNumber}` : 'Submit requirements'}
+        description="Every question must be answered before the seller can start work."
+        size="lg"
+        testId="requirements-modal"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              testId="requirements-cancel"
+              onClick={() => {
+                setRequirementsOrder(null);
+                setRequirementsError(undefined);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button testId="requirements-submit" onClick={handleSubmitRequirements}>
+              Submit requirements
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {requirementsOrder?.requirements.map((requirement, index) => (
+            <div key={requirement.id}>
+              <label
+                htmlFor={`requirement-${requirement.id}`}
+                className="mb-1.5 block text-sm font-medium text-slate-300"
+              >
+                <span className="tabular mr-1.5 text-slate-500">{index + 1}.</span>
+                {requirement.question}
+              </label>
+              <textarea
+                id={`requirement-${requirement.id}`}
+                data-testid={`requirement-input-${index}`}
+                rows={2}
+                value={requirementDrafts[requirement.id] ?? ''}
+                onChange={(event) =>
+                  setRequirementDrafts((previous) => ({ ...previous, [requirement.id]: event.target.value }))
+                }
+                className="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500"
+              />
+            </div>
+          ))}
+          {requirementsError ? (
+            <p role="alert" data-testid="requirements-error" className="text-xs text-rose-300">
+              {requirementsError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
     </section>
   );
 }
@@ -397,20 +568,30 @@ function deliveryWindowDays(order: OrderItem): number {
 
 function OrderDetailPanel({
   order,
+  audience,
+  counterpartyName,
   onClose,
   onRequestRevision,
+  onTransition,
 }: {
   order: OrderItem | null;
+  audience: 'seller' | 'buyer';
+  counterpartyName?: string;
   onClose: () => void;
-  onRequestRevision: (order: OrderItem) => void;
+  onRequestRevision: (orderId: string) => void;
+  onTransition: (orderId: string, status: OrderStatus) => void;
 }): React.JSX.Element | null {
   if (!order) {
     return null;
   }
 
+  const transition = resolvePrimaryTransition(order, audience);
+  const showRevision = audience === 'buyer' && canBuyerRequestRevision(order);
+
   return (
     <div
       data-testid="order-detail-panel"
+      data-audience={audience}
       className="mt-4 rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -423,6 +604,9 @@ function OrderDetailPanel({
             <CountdownClock dueDateIsoString={order.dueDate} status={order.status} size="sm" />
           </div>
           <p className="mt-1 text-sm text-slate-300">{order.gigTitle}</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {audience === 'seller' ? 'Buyer' : 'Seller'}: {counterpartyName ?? 'Unknown'}
+          </p>
         </div>
         <Button variant="ghost" size="sm" testId="order-detail-close" onClick={onClose}>
           Close
@@ -436,16 +620,22 @@ function OrderDetailPanel({
         </div>
 
         <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Requirements</h4>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {audience === 'seller' ? 'Buyer requirements' : 'Your requirements'}
+          </h4>
           {order.requirements.length === 0 ? (
-            <p className="text-xs text-slate-500">The buyer has not raised any requirements yet.</p>
+            <p className="text-xs text-slate-500">No requirements were raised for this order.</p>
           ) : (
             <ul className="space-y-2">
               {order.requirements.map((requirement) => (
                 <li key={requirement.id} className="rounded-lg border border-slate-700/70 bg-slate-900/60 px-3 py-2">
                   <p className="text-xs font-medium text-slate-200">{requirement.question}</p>
                   <p className={cn('mt-1 text-xs', requirement.isAnswered ? 'text-slate-400' : 'text-amber-300')}>
-                    {requirement.isAnswered ? requirement.answerText : 'Awaiting your answer'}
+                    {requirement.isAnswered
+                      ? requirement.answerText
+                      : audience === 'seller'
+                        ? 'Awaiting the buyer'
+                        : 'Not answered yet'}
                   </p>
                 </li>
               ))}
@@ -454,21 +644,52 @@ function OrderDetailPanel({
         </div>
       </div>
 
+      {order.deliveryFiles.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivered files</h4>
+          <ul className="grid gap-2 sm:grid-cols-2" data-testid="order-delivery-files">
+            {order.deliveryFiles.map((file) => (
+              <li
+                key={`${file.name}-${file.sizeBytes}`}
+                className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-900/60 px-3 py-2"
+              >
+                <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-slate-500" />
+                <span className="truncate text-xs text-slate-300">{file.name}</span>
+                <span className="tabular ml-auto shrink-0 text-[11px] text-slate-500">
+                  {(file.sizeBytes / 1024 / 1024).toFixed(2)}MB
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
         <Badge tone="info" size="md">
           {formatDeliveryDays(deliveryWindowDays(order))} turnaround
         </Badge>
         <span className="text-xs text-slate-500">Updated {formatRelativeTime(order.updatedAt)}</span>
-        {order.status === 'delivered' && order.revisionCountRemaining > 0 ? (
+        {showRevision ? (
           <Button
             variant="outline"
             size="sm"
             className="ml-auto"
             testId="order-detail-request-revision"
             iconLeft={<RefreshCcw aria-hidden="true" className="size-4" />}
-            onClick={() => onRequestRevision(order)}
+            onClick={() => onRequestRevision(order.id)}
           >
             Request revision
+          </Button>
+        ) : null}
+        {transition ? (
+          <Button
+            variant={showRevision ? 'ghost' : 'primary'}
+            size="sm"
+            className={showRevision ? '' : 'ml-auto'}
+            testId="order-detail-primary-action"
+            onClick={() => onTransition(order.id, transition.status)}
+          >
+            {transition.label}
           </Button>
         ) : null}
       </div>

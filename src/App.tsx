@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { EarningsBreakdownView } from './components/domain/EarningsBreakdownView';
 import { GigExplorerGrid } from './components/domain/GigExplorerGrid';
 import { OrderManagementQueue } from './components/domain/OrderManagementQueue';
@@ -8,42 +8,84 @@ import { AppHeader } from './components/shell/AppHeader';
 import { MobileNav } from './components/shell/MobileNav';
 import { MarketplaceProvider, useMarketplace } from './context/MarketplaceContext';
 import { ToastProvider } from './context/ToastContext';
-import type { AppView } from './types/marketplace';
+import {
+  DEFAULT_VIEW_BY_MODE,
+  isViewAllowedInMode,
+  type AppView,
+  type SellerMode,
+} from './types/marketplace';
 import { cn } from './utils/cn';
 
-const VIEW_TITLES: Record<AppView, { title: string; subtitle: string }> = {
-  explorer: {
-    title: 'Gig Explorer',
-    subtitle: 'Search, facet and compare every listing on the marketplace.',
+/**
+ * Workspace headings per persona. The same `orders` view is a fulfilment queue
+ * for a seller and a purchase tracker for a buyer, so its copy follows the
+ * active mode instead of being shared boilerplate.
+ */
+const VIEW_TITLES: Record<SellerMode, Record<AppView, { title: string; subtitle: string }>> = {
+  seller: {
+    explorer: {
+      title: 'Marketplace',
+      subtitle: 'Track how your listings perform against the rest of the marketplace.',
+    },
+    dashboard: {
+      title: 'Seller Management',
+      subtitle: 'Performance, tier progression and the live order workflow.',
+    },
+    orders: {
+      title: 'Incoming Orders',
+      subtitle: 'Fulfil the orders buyers placed on your gigs, from requirements to delivery.',
+    },
+    earnings: {
+      title: 'Earnings & Payouts',
+      subtitle: 'Balances, clearance schedule and the transaction ledger.',
+    },
+    profile: {
+      title: 'Seller Reputation',
+      subtitle: 'Your public reputation, listings and local data integrity.',
+    },
   },
-  dashboard: {
-    title: 'Seller Management',
-    subtitle: 'Performance, tier progression and the live order workflow.',
-  },
-  orders: {
-    title: 'Order Management',
-    subtitle: 'Move orders through requirements, delivery and revisions.',
-  },
-  earnings: {
-    title: 'Earnings & Finances',
-    subtitle: 'Balances, clearance schedule and the transaction ledger.',
-  },
-  profile: {
-    title: 'Seller Profile',
-    subtitle: 'Your public reputation, listings and local data integrity.',
+  buyer: {
+    explorer: {
+      title: 'Gig Explorer',
+      subtitle: 'Search, facet and compare every listing on the marketplace.',
+    },
+    dashboard: {
+      title: 'Seller Management',
+      subtitle: 'Seller analytics are only available in seller mode.',
+    },
+    orders: {
+      title: 'My Purchases',
+      subtitle: 'Submit requirements, review deliveries and release escrow.',
+    },
+    earnings: {
+      title: 'Earnings & Finances',
+      subtitle: 'Seller finances are only available in seller mode.',
+    },
+    profile: {
+      title: 'Buyer Account',
+      subtitle: 'Your account, purchase history and local data integrity.',
+    },
   },
 };
 
 function Workspace(): React.JSX.Element {
   const { sellerMode } = useMarketplace();
-  const [activeView, setActiveView] = useState<AppView>('explorer');
+  const [activeView, setActiveView] = useState<AppView>(DEFAULT_VIEW_BY_MODE[sellerMode]);
+
+  // Switching persona can strand the user on a workspace the new mode does not
+  // own, so the view is redirected to that persona's landing workspace.
+  useEffect(() => {
+    if (!isViewAllowedInMode(activeView, sellerMode)) {
+      setActiveView(DEFAULT_VIEW_BY_MODE[sellerMode]);
+    }
+  }, [activeView, sellerMode]);
 
   const navigate = useCallback((view: AppView) => {
     setActiveView(view);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  const heading = VIEW_TITLES[activeView];
+  const heading = VIEW_TITLES[sellerMode][activeView];
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-900 text-slate-100" data-testid="app-shell">
@@ -67,13 +109,9 @@ function Workspace(): React.JSX.Element {
         {activeView === 'explorer' ? (
           <GigExplorerGrid compactSeller={sellerMode === 'buyer'} />
         ) : null}
-        {activeView === 'dashboard' ? <SellerDashboardView /> : null}
-        {activeView === 'orders' ? (
-          <div className="rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5">
-            <OrderManagementQueue title="All orders" />
-          </div>
-        ) : null}
-        {activeView === 'earnings' ? <EarningsBreakdownView /> : null}
+        {activeView === 'dashboard' && sellerMode === 'seller' ? <SellerDashboardView /> : null}
+        {activeView === 'orders' ? <OrderManagementQueue /> : null}
+        {activeView === 'earnings' && sellerMode === 'seller' ? <EarningsBreakdownView /> : null}
         {activeView === 'profile' ? <SellerProfileView /> : null}
       </main>
 

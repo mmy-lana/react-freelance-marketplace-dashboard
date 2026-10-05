@@ -1,11 +1,11 @@
-import { Database, Gauge, RotateCcw, ShieldCheck } from 'lucide-react';
+import { Database, Gauge, Receipt, RotateCcw, ShieldCheck } from 'lucide-react';
 import { Avatar } from '../primitives/Avatar';
 import { Badge, SellerLevelBadge } from '../primitives/Badge';
 import { Button } from '../primitives/Button';
 import { useMarketplace } from '../../context/MarketplaceContext';
 import { useSellerProgression } from '../../hooks/useSellerProgression';
 import { cn } from '../../utils/cn';
-import { formatCentsToUsd } from '../../utils/currency';
+import { formatCentsToUsd, formatCentsToUsdWhole } from '../../utils/currency';
 import { formatAbsoluteDate } from '../../utils/date';
 
 const STORAGE_TONES = {
@@ -16,24 +16,61 @@ const STORAGE_TONES = {
 } as const;
 
 /**
- * Seller profile workspace: identity card, tier progression snapshot, listing
- * health and the live storage integrity report for the persisted dataset.
+ * Profile workspace for both personas.
+ *
+ * Seller mode exposes reputation, tier progression, listing health and the
+ * storage integrity report. Buyer mode replaces every seller-only surface --
+ * tier progression, lifetime earnings and seller performance metrics -- with
+ * purchase statistics, because those numbers are not the buyer's to see.
  */
 export function SellerProfileView(): React.JSX.Element {
-  const { currentUser, gigs, orders, myGigs, storageReports, hydrationSource, resetMarketplace } = useMarketplace();
+  const {
+    currentUser,
+    gigs,
+    orders,
+    buyerOrders,
+    myGigs,
+    sellerMode,
+    storageReports,
+    hydrationSource,
+    resetMarketplace,
+  } = useMarketplace();
   const progression = useSellerProgression(currentUser);
+  const isSellerMode = sellerMode === 'seller';
 
   const activeGigs = myGigs.filter((gig) => gig.status === 'active').length;
   const pausedGigs = myGigs.filter((gig) => gig.status === 'paused').length;
+  const completedOrders = orders.filter((order) => order.status === 'completed').length;
   const completionRate =
-    orders.filter((order) => order.status === 'completed').length > 0
-      ? Math.round(
-          (orders.filter((order) => order.status === 'completed').length / Math.max(1, orders.length)) * 100
-        )
-      : currentUser.orderCompletionPercent;
+    orders.length > 0 ? Math.round((completedOrders / orders.length) * 100) : currentUser.orderCompletionPercent;
+
+  const activePurchases = buyerOrders.filter((order) =>
+    ['pending_requirements', 'in_progress', 'delivered', 'revision'].includes(order.status)
+  ).length;
+  const lifetimeSpend = buyerOrders
+    .filter((order) => order.status === 'completed')
+    .reduce((sum, order) => sum + order.amountCents, 0);
+  const revisionsUsed = buyerOrders.reduce(
+    (sum, order) => sum + (order.revisionCountTotal - order.revisionCountRemaining),
+    0
+  );
+
+  const profileStats = isSellerMode
+    ? [
+        { label: 'Completed orders', value: currentUser.completedOrdersCount.toLocaleString('en-US') },
+        { label: 'Response rate', value: `${currentUser.responseRatePercent}%` },
+        { label: 'Avg. response', value: `${currentUser.responseTimeHours}h` },
+        { label: 'On-time delivery', value: `${currentUser.onTimeDeliveryPercent}%` },
+      ]
+    : [
+        { label: 'Orders placed', value: buyerOrders.length.toLocaleString('en-US') },
+        { label: 'Active deliveries', value: String(activePurchases) },
+        { label: 'Completed purchases', value: String(completedOrders) },
+        { label: 'Total spent', value: formatCentsToUsdWhole(lifetimeSpend) },
+      ];
 
   return (
-    <div data-testid="profile-view" className="space-y-6">
+    <div data-testid="profile-view" data-profile-mode={sellerMode} className="space-y-6">
       <section
         className="flex flex-col gap-4 rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:flex-row sm:items-center sm:p-5"
         data-testid="profile-identity"
@@ -42,7 +79,7 @@ export function SellerProfileView(): React.JSX.Element {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-bold text-white">{currentUser.displayName}</h1>
-            <SellerLevelBadge level={currentUser.level} size="md" />
+            {isSellerMode ? <SellerLevelBadge level={currentUser.level} size="md" /> : null}
           </div>
           <p className="text-sm text-slate-400">@{currentUser.username} · {currentUser.title}</p>
           <p className="mt-1 text-xs text-slate-500">
@@ -56,12 +93,7 @@ export function SellerProfileView(): React.JSX.Element {
       </section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="profile-stats">
-        {[
-          { label: 'Completed orders', value: currentUser.completedOrdersCount.toLocaleString('en-US') },
-          { label: 'Response rate', value: `${currentUser.responseRatePercent}%` },
-          { label: 'Avg. response', value: `${currentUser.responseTimeHours}h` },
-          { label: 'On-time delivery', value: `${currentUser.onTimeDeliveryPercent}%` },
-        ].map((stat) => (
+        {profileStats.map((stat) => (
           <div key={stat.label} className="rounded-2xl border border-slate-700/70 bg-slate-800/40 px-3 py-3">
             <p className="text-xs text-slate-500">{stat.label}</p>
             <p className="tabular mt-1 text-xl font-bold text-white">{stat.value}</p>
@@ -70,7 +102,11 @@ export function SellerProfileView(): React.JSX.Element {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5" data-testid="profile-tier">
+        {isSellerMode ? (
+          <div
+            className="rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5"
+            data-testid="profile-tier"
+          >
           <h2 className="flex items-center gap-2 text-base font-semibold text-white">
             <Gauge aria-hidden="true" className="size-4 text-emerald-400" />
             Tier progress
@@ -107,12 +143,40 @@ export function SellerProfileView(): React.JSX.Element {
               <dd className="tabular mt-1 text-base font-semibold text-white">{completionRate}%</dd>
             </div>
           </dl>
-        </div>
+          </div>
+        ) : (
+          <div
+            className="rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5"
+            data-testid="profile-purchases"
+          >
+            <h2 className="flex items-center gap-2 text-base font-semibold text-white">
+              <Receipt aria-hidden="true" className="size-4 text-emerald-400" />
+              Purchase activity
+            </h2>
+            <dl className="mt-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-400">Deliveries in flight</dt>
+                <dd className="tabular font-semibold text-white">{activePurchases}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-400">Revisions used</dt>
+                <dd className="tabular font-semibold text-white">{revisionsUsed}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-400">Escrow released</dt>
+                <dd className="tabular font-semibold text-white">{formatCentsToUsd(lifetimeSpend)}</dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-xs text-slate-500">
+              Seller tier progression, balances and performance analytics stay in seller mode.
+            </p>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-slate-700/70 bg-slate-800/40 p-4 sm:p-5" data-testid="profile-listings">
           <h2 className="flex items-center gap-2 text-base font-semibold text-white">
             <ShieldCheck aria-hidden="true" className="size-4 text-emerald-400" />
-            Listing health
+            {isSellerMode ? 'Listing health' : 'Marketplace activity'}
           </h2>
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex items-center justify-between gap-3">

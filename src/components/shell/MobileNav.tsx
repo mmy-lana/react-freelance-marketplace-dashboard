@@ -1,6 +1,7 @@
 import { Compass, Receipt, User, Wallet } from 'lucide-react';
+import { useMemo } from 'react';
 import { useMarketplace } from '../../context/MarketplaceContext';
-import type { AppView } from '../../types/marketplace';
+import type { AppView, SellerMode } from '../../types/marketplace';
 import { cn } from '../../utils/cn';
 
 export interface MobileNavProps {
@@ -9,37 +10,54 @@ export interface MobileNavProps {
   className?: string;
 }
 
-const NAV_ENTRIES: { id: AppView; label: string; icon: typeof Compass }[] = [
-  { id: 'explorer', label: 'Explorer', icon: Compass },
-  { id: 'orders', label: 'Orders', icon: Receipt },
-  { id: 'earnings', label: 'Earnings', icon: Wallet },
-  { id: 'profile', label: 'Profile', icon: User },
-];
+const ACTIVE_STATUSES = ['pending_requirements', 'in_progress', 'delivered', 'revision'] as const;
+
+const NAV_ENTRIES: Record<SellerMode, { id: AppView; label: string; icon: typeof Compass }[]> = {
+  seller: [
+    { id: 'explorer', label: 'Marketplace', icon: Compass },
+    { id: 'orders', label: 'Orders', icon: Receipt },
+    { id: 'earnings', label: 'Earnings', icon: Wallet },
+    { id: 'profile', label: 'Profile', icon: User },
+  ],
+  buyer: [
+    { id: 'explorer', label: 'Explorer', icon: Compass },
+    { id: 'orders', label: 'Purchases', icon: Receipt },
+    { id: 'profile', label: 'Account', icon: User },
+  ],
+};
 
 /**
  * Fixed bottom navigation rendered below 768px.
  *
- * Height is bound to `--nav-bottom-height` (56px) and the main column reserves
- * the same space, so content is never hidden underneath the bar.
+ * Entries and the active-order badge follow the active persona, so a buyer
+ * never sees an earnings destination they cannot open. Height is bound to
+ * `--nav-bottom-height` (56px) and the main column reserves the same space, so
+ * content is never hidden underneath the bar.
  */
 export function MobileNav({ activeView, onNavigate, className }: MobileNavProps): React.JSX.Element {
-  const { orders } = useMarketplace();
-  const activeOrderCount = orders.filter((order) =>
-    ['pending_requirements', 'in_progress', 'delivered', 'revision'].includes(order.status)
-  ).length;
+  const { sellerMode, sellerOrders, buyerOrders } = useMarketplace();
+
+  // The badge counts only the orders the current persona is responsible for.
+  const activeOrderCount = useMemo(() => {
+    const scoped = sellerMode === 'seller' ? sellerOrders : buyerOrders;
+    return scoped.filter((order) => (ACTIVE_STATUSES as readonly string[]).includes(order.status)).length;
+  }, [sellerMode, sellerOrders, buyerOrders]);
+
+  const entries = NAV_ENTRIES[sellerMode];
 
   return (
     <nav
       aria-label="Primary"
       data-testid="mobile-nav"
+      data-nav-mode={sellerMode}
       className={cn(
         'fixed inset-x-0 bottom-0 z-50 border-t border-slate-800 bg-slate-900/95 backdrop-blur md:hidden',
         className
       )}
       style={{ height: 'var(--nav-bottom-height)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <ul className="mx-auto flex h-full max-w-lg items-stretch justify-around px-2">
-        {NAV_ENTRIES.map((entry) => {
+      <ul className="mx-auto flex h-full max-w-lg items-stretch justify-around px-2" data-testid="mobile-nav-entries">
+        {entries.map((entry) => {
           const isActive = activeView === entry.id;
           const badge = entry.id === 'orders' ? activeOrderCount : 0;
           return (

@@ -237,6 +237,53 @@ export interface AuthorizationResult {
   error?: string;
 }
 
+/** The CTA each persona is offered for a given order status. */
+export interface PrimaryTransition {
+  status: OrderStatus;
+  label: string;
+}
+
+/**
+ * Fulfillment actions. Sellers start work and deliver; buyers never see a
+ * delivery CTA on a purchase they placed.
+ */
+const SELLER_PRIMARY_TRANSITIONS: Partial<Record<OrderStatus, PrimaryTransition>> = {
+  pending_requirements: { status: 'in_progress', label: 'Start work' },
+  in_progress: { status: 'delivered', label: 'Deliver work' },
+  revision: { status: 'delivered', label: 'Deliver work' },
+};
+
+/**
+ * Purchase actions. Buyers answer requirements, review deliveries and release
+ * the escrow; they never see a seller transition.
+ */
+const BUYER_PRIMARY_TRANSITIONS: Partial<Record<OrderStatus, PrimaryTransition>> = {
+  pending_requirements: { status: 'in_progress', label: 'Submit requirements' },
+  delivered: { status: 'completed', label: 'Approve & complete' },
+};
+
+/**
+ * Resolves the single primary CTA for an order from the acting persona's
+ * perspective. Returns `undefined` when the persona has nothing to do, which
+ * is what keeps seller-only and buyer-only actions off each other's orders.
+ */
+export function resolvePrimaryTransition(
+  order: OrderItem,
+  audience: 'seller' | 'buyer'
+): PrimaryTransition | undefined {
+  const table = audience === 'seller' ? SELLER_PRIMARY_TRANSITIONS : BUYER_PRIMARY_TRANSITIONS;
+  const transition = table[order.status];
+  if (transition === undefined) {
+    return undefined;
+  }
+  return ORDER_STATUS_TRANSITIONS[order.status].includes(transition.status) ? transition : undefined;
+}
+
+/** True when the buyer may dispute a delivered order. */
+export function canBuyerRequestRevision(order: OrderItem): boolean {
+  return ORDER_STATUS_TRANSITIONS[order.status].includes('revision') && order.revisionCountRemaining > 0;
+}
+
 /**
  * Object-level authorization for every order status mutation.
  *
@@ -433,12 +480,18 @@ export interface MarketplaceContextValue {
   filteredGigs: GigItem[];
   categoryCounts: Record<GigCategory, number>;
   myGigs: GigItem[];
+  /** Orders the signed-in account fulfils as the assigned seller. */
+  sellerOrders: OrderItem[];
+  /** Orders the signed-in account purchased from other sellers. */
+  buyerOrders: OrderItem[];
 
   createNewGig: (payload: CreateGigInput) => Promise<GigItem>;
   toggleGigStatus: (gigId: string) => MutationResult<GigItem>;
   updateOrderStatus: (orderId: string, newStatus: OrderStatus) => MutationResult<OrderItem>;
   deliverOrder: (orderId: string, files: DeliveryFileInput[]) => MutationResult<OrderItem>;
   requestRevision: (orderId: string, note: string) => MutationResult<OrderItem>;
+  /** Buyer-only: answers the requirement questionnaire and releases the order to the seller. */
+  submitRequirements: (orderId: string, answers: Record<string, string>) => MutationResult<OrderItem>;
   promoteSellerIfEligible: () => MutationResult<UserProfile>;
   markNotificationsRead: () => void;
   resetMarketplace: () => void;
@@ -526,6 +579,14 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
   const filteredGigs = useMemo(() => filterGigs(gigs, effectiveFilters), [gigs, effectiveFilters]);
   const categoryCounts = useMemo(() => countGigsByCategory(gigs), [gigs]);
   const myGigs = useMemo(() => gigs.filter((gig) => gig.sellerId === profile.id), [gigs, profile.id]);
+
+  // Persona-scoped order views. A single account is both a seller and a buyer,
+  // so the two partitions are derived, never assumed.
+  const sellerOrders = useMemo(
+    () => orders.filter((order) => order.sellerId === profile.id),
+    [orders, profile.id]
+  );
+  const buyerOrders = useMemo(() => orders.filter((order) => order.buyerId === profile.id), [orders, profile.id]);
 
   const setSellerMode = useCallback((mode: SellerMode) => {
     setSellerModeState(mode);
@@ -789,6 +850,62 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
     [orders, profile.id, pushToast]
   );
 
+  /**
+ * Buyer-only action: records the answers to the requirement questionnaire and
+ * releases the order to the seller.
+ *
+ * This is deliberately not a generic status transition. The state machine
+ * reserves `in_progress` for the seller, so the buyer path carries its own
+ * authorization instead of borrowing `updateOrderStatus`.
+ */
+const submitRequirements = useCallback(
+    (orderId: string, answers: Record<string, string>): MutationResult<OrderItem> => {
+      const order = orders.find((candidate) => candidate.id === orderId);
+      if (!order) {
+        return { ok: false, error: 'That order no longer exists.' };
+      }
+      if (order.buyerId !== profile.id) {
+        return { ok: false, error: 'Unauthorized: Only the buyer can answer the requirements for this order.' };
+      }
+      if (order.status !== 'pending_requirements') {
+        return { ok: false, error: 'Requirements can only be submitted while the order is awaiting them.' };
+      }
+
+      const unanswered = order.requirements.filter(
+        (requirement) => (answers[requirement.id] ?? '').trim().length === 0
+      );
+      if (unanswered.length > 0) {
+        return {
+          ok: false,
+          error: `Answer every requirement before submitting: ${unanswered.length} question(s) still open.`,
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      const updated: OrderItem = {
+        ...order,
+        status: 'in_progress',
+        updatedAt: nowIso,
+        requirements: order.requirements.map((requirement) => ({
+          ...requirement,
+          answerText: answers[requirement.id]?.trim() ?? requirement.answerText,
+          isAnswered: true,
+        })),
+      };
+
+      setOrders((previous) => previous.map((candidate) => (candidate.id === orderId ? updated : candidate)));
+
+      pushToast({
+        tone: 'success',
+        title: `Requirements submitted for ${order.orderNumber}`,
+        description: 'The seller has been notified and the order is now in progress.',
+      });
+
+      return { ok: true, data: updated };
+    },
+    [orders, profile.id, pushToast]
+  );
+
   const promoteSellerIfEligible = useCallback((): MutationResult<UserProfile> => {
     const qualification = evaluateSellerLevel(profile);
     if (!qualification.eligibleForPromotion || qualification.nextLevel === null) {
@@ -856,11 +973,14 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       filteredGigs,
       categoryCounts,
       myGigs,
+      sellerOrders,
+      buyerOrders,
       createNewGig,
       toggleGigStatus,
       updateOrderStatus,
       deliverOrder,
       requestRevision,
+      submitRequirements,
       promoteSellerIfEligible,
       markNotificationsRead,
       resetMarketplace,
@@ -885,11 +1005,14 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       filteredGigs,
       categoryCounts,
       myGigs,
+      sellerOrders,
+      buyerOrders,
       createNewGig,
       toggleGigStatus,
       updateOrderStatus,
       deliverOrder,
       requestRevision,
+      submitRequirements,
       promoteSellerIfEligible,
       markNotificationsRead,
       resetMarketplace,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Reactive, schema-aware localStorage state.
@@ -29,6 +29,12 @@ export function useLocalStorageSync<T>(
       return initialValue;
     }
   });
+
+  // The seed value is only read on mount and as a last-resort fallback, so it
+  // is held in a ref: keeping it out of the dependency array is what stops the
+  // subscription from being torn down and rebuilt on every render where the
+  // caller passes a freshly allocated object or array literal.
+  const initialValueRef = useRef(initialValue);
 
   const setValue = useCallback(
     (value: T | ((val: T) => T)) => {
@@ -62,7 +68,7 @@ export function useLocalStorageSync<T>(
       }
       try {
         const item = window.localStorage.getItem(key);
-        setStoredValue(item ? (JSON.parse(item) as T) : initialValue);
+        setStoredValue(item ? (JSON.parse(item) as T) : initialValueRef.current);
       } catch {
         // Preserve existing state when the payload cannot be parsed.
       }
@@ -75,7 +81,7 @@ export function useLocalStorageSync<T>(
       window.removeEventListener(eventName, handleCustomSync);
       window.removeEventListener('storage', handleWindowStorage);
     };
-  }, [key, initialValue]);
+  }, [key]);
 
   return [storedValue, setValue];
 }

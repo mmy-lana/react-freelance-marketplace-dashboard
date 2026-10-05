@@ -7,22 +7,21 @@ import { formatCentsToUsd } from '../../utils/currency';
 import { formatShortDate } from '../../utils/date';
 import { ORDER_STATUS_TRANSITIONS } from '../../types/marketplace';
 import { CountdownClock } from './CountdownClock';
+import { resolvePrimaryTransition, canBuyerRequestRevision } from '../../context/MarketplaceContext';
 
 /** Statuses whose countdown badge stays visible in dense desktop rows. */
 const COUNTDOWN_STATUSES: readonly OrderStatus[] = ['pending_requirements', 'in_progress', 'delivered', 'revision'];
 
-/** First actionable transition offered by the row CTA. */
-const PRIMARY_TRANSITION: Partial<Record<OrderStatus, { status: OrderStatus; label: string }>> = {
-  pending_requirements: { status: 'in_progress', label: 'Start work' },
-  in_progress: { status: 'delivered', label: 'Deliver' },
-  delivered: { status: 'completed', label: 'Complete' },
-  revision: { status: 'delivered', label: 'Redeliver' },
-};
-
 export interface OrderRowItemProps {
   order: OrderItem;
+  /** Persona the row is rendered for; drives which CTAs are offered. */
+  audience: 'seller' | 'buyer';
+  /** Counterparty shown to the current persona (buyer for sellers, seller for buyers). */
+  counterpartyName?: string;
   /** Applies a lifecycle transition; receives the target status. */
   onTransition?: (orderId: string, status: OrderStatus) => void;
+  /** Opens the buyer-side revision request. */
+  onRequestRevision?: (orderId: string) => void;
   /** Opens the full order workspace. */
   onOpen?: (order: OrderItem) => void;
   /** Marks the row as the currently inspected order. */
@@ -36,11 +35,22 @@ export interface OrderRowItemProps {
  * Buyer, service fee and start date columns collapse between 768px and 1023px,
  * leaving a four column table that still carries order, status, amount and CTA.
  */
-export function OrderRowItem({ order, onTransition, onOpen, isActive = false, className }: OrderRowItemProps): React.JSX.Element {
-  const transition = PRIMARY_TRANSITION[order.status];
+export function OrderRowItem({
+  order,
+  audience,
+  counterpartyName,
+  onTransition,
+  onRequestRevision,
+  onOpen,
+  isActive = false,
+  className,
+}: OrderRowItemProps): React.JSX.Element {
+  const transition = resolvePrimaryTransition(order, audience);
   const canTransition = transition !== undefined && ORDER_STATUS_TRANSITIONS[order.status].includes(transition.status);
+  const canRequestRevision = audience === 'buyer' && canBuyerRequestRevision(order);
   const answered = order.requirements.filter((requirement) => requirement.isAnswered).length;
   const showCountdown = COUNTDOWN_STATUSES.includes(order.status);
+  const showNetColumn = audience === 'seller';
 
   return (
     <tr
@@ -82,10 +92,16 @@ export function OrderRowItem({ order, onTransition, onOpen, isActive = false, cl
       </th>
 
       <td className="hidden px-3 py-3 align-middle xl:table-cell">
-        <span className="flex items-center gap-2">
-          <Avatar src={order.buyerAvatarUrl} name={order.buyerUsername} size="sm" />
-          <span className="truncate text-sm text-slate-300">{order.buyerUsername}</span>
-        </span>
+        {showNetColumn ? (
+          <span className="flex items-center gap-2">
+            <Avatar src={order.buyerAvatarUrl} name={order.buyerUsername} size="sm" />
+            <span className="truncate text-sm text-slate-300">{order.buyerUsername}</span>
+          </span>
+        ) : (
+          <Badge tone="brand" size="sm">
+            {counterpartyName ?? 'Your purchase'}
+          </Badge>
+        )}
       </td>
 
       <td className="hidden px-3 py-3 align-middle lg:table-cell">
@@ -115,11 +131,21 @@ export function OrderRowItem({ order, onTransition, onOpen, isActive = false, cl
 
       <td className="px-3 py-3 text-right align-middle">
         <div className="flex items-center justify-end gap-2">
-          {order.revisionCountRemaining > 0 ? (
+          {order.revisionCountRemaining > 0 && showNetColumn ? (
             <span className="tabular hidden items-center gap-1 text-[11px] text-slate-500 md:inline-flex">
               <RefreshCcw aria-hidden="true" className="size-3" />
               {order.revisionCountRemaining} left
             </span>
+          ) : null}
+          {canRequestRevision ? (
+            <button
+              type="button"
+              onClick={() => onRequestRevision?.(order.id)}
+              data-testid={`order-revision-${order.id}`}
+              className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-amber-500/40 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/10"
+            >
+              Request revision
+            </button>
           ) : null}
           {canTransition && transition ? (
             <button

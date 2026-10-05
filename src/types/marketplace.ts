@@ -291,6 +291,40 @@ export type SellerMode = 'seller' | 'buyer';
 
 export type AppView = 'explorer' | 'dashboard' | 'orders' | 'earnings' | 'profile';
 
+/**
+ * Workspaces each persona may enter.
+ *
+ * The marketplace grid is a shared surface: buyers browse it to discover gigs
+ * and sellers use it to manage their own listings, so it stays reachable in
+ * both modes. Every analytical or financial workspace is strictly partitioned —
+ * a buyer can never reach seller management or seller earnings.
+ */
+export const SELLER_ALLOWED_VIEWS = [
+  'explorer',
+  'dashboard',
+  'orders',
+  'earnings',
+  'profile',
+] as const satisfies readonly AppView[];
+
+export const BUYER_ALLOWED_VIEWS = ['explorer', 'orders', 'profile'] as const satisfies readonly AppView[];
+
+export const ALLOWED_VIEWS: Record<SellerMode, readonly AppView[]> = {
+  seller: SELLER_ALLOWED_VIEWS,
+  buyer: BUYER_ALLOWED_VIEWS,
+};
+
+/** Landing workspace for each persona. */
+export const DEFAULT_VIEW_BY_MODE: Record<SellerMode, AppView> = {
+  seller: 'explorer',
+  buyer: 'explorer',
+};
+
+/** True when `view` belongs to the given persona's workspace. */
+export function isViewAllowedInMode(view: AppView, mode: SellerMode): boolean {
+  return ALLOWED_VIEWS[mode].includes(view);
+}
+
 /** Result envelope returned by every asynchronous marketplace mutation. */
 export interface MutationResult<T> {
   ok: boolean;

@@ -19,13 +19,20 @@ export interface AppHeaderProps {
   className?: string;
 }
 
-const NAV_ITEMS: { id: AppView; label: string }[] = [
-  { id: 'explorer', label: 'Explorer' },
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'orders', label: 'Orders' },
-  { id: 'earnings', label: 'Earnings' },
-  { id: 'profile', label: 'Profile' },
-];
+const NAV_ITEMS: Record<SellerMode, { id: AppView; label: string }[]> = {
+  seller: [
+    { id: 'explorer', label: 'Marketplace' },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'orders', label: 'Orders' },
+    { id: 'earnings', label: 'Earnings' },
+    { id: 'profile', label: 'Profile' },
+  ],
+  buyer: [
+    { id: 'explorer', label: 'Explorer' },
+    { id: 'orders', label: 'Purchases' },
+    { id: 'profile', label: 'Account' },
+  ],
+};
 
 const NOTIFICATION_ICONS: Record<NotificationKind, string> = {
   order: '📦',
@@ -57,6 +64,10 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  // The navigation is a projection of the active persona, not a static menu.
+  const navItems = NAV_ITEMS[sellerMode];
+  const isSellerMode = sellerMode === 'seller';
 
   useEffect(() => {
     if (!isNotificationsOpen) {
@@ -104,8 +115,8 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
         </button>
 
         <nav aria-label="Primary" data-testid="header-nav" className="hidden min-w-0 md:block">
-          <ul className="flex items-center gap-0.5 lg:gap-1">
-            {NAV_ITEMS.map((item) => (
+          <ul className="flex items-center gap-0.5 lg:gap-1" data-nav-mode={sellerMode}>
+            {navItems.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"
@@ -211,7 +222,7 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
             ) : null}
           </div>
 
-          <div className="hidden shrink-0 items-center rounded-lg border border-slate-700 p-0.5 sm:flex" role="group" aria-label="Marketplace mode">
+          <div className="flex shrink-0 items-center rounded-lg border border-slate-700 p-0.5" role="group" aria-label="Marketplace mode">
             {MODE_OPTIONS.map((mode) => (
               <button
                 key={mode.id}
@@ -222,7 +233,9 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
                 data-mode-active={sellerMode === mode.id ? 'true' : 'false'}
                 onClick={() => setSellerMode(mode.id)}
                 className={cn(
-                  'inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-2 text-xs font-semibold transition-colors lg:px-3',
+                  // 44px keeps the switcher a valid touch target on phones, where
+                  // it is the only way to change persona.
+                  'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-md px-2 text-xs font-semibold transition-colors lg:px-3',
                   sellerMode === mode.id ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
                 )}
               >
@@ -256,30 +269,33 @@ export function AppHeader({ activeView, onNavigate, className }: AppHeaderProps)
         </div>
       </div>
 
-      <div className="mx-auto hidden max-w-7xl items-center justify-between gap-3 border-t border-slate-800/70 px-4 py-2 sm:px-6 lg:flex">
-        <div className="flex items-center gap-2">
-          <SellerLevelBadge level={currentUser.level} size="md" />
-          <Badge tone="neutral" size="md">
-            {currentUser.country}
-          </Badge>
+      {isSellerMode ? (
+        <div className="mx-auto hidden max-w-7xl items-center justify-between gap-3 border-t border-slate-800/70 px-4 py-2 sm:px-6 lg:flex">
+          <div className="flex items-center gap-2">
+            <SellerLevelBadge level={currentUser.level} size="md" />
+            <Badge tone="neutral" size="md">
+              {currentUser.country}
+            </Badge>
+          </div>
+          <nav aria-label="Quick links" className="flex items-center gap-1">
+            {[
+              { id: 'dashboard' as AppView, label: 'Analytics', icon: LayoutDashboard },
+              { id: 'earnings' as AppView, label: 'Payouts', icon: Wallet },
+            ].map((quick) => (
+              <button
+                key={quick.id}
+                type="button"
+                onClick={() => onNavigate(quick.id)}
+                data-testid={`quick-${quick.id}`}
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              >
+                <quick.icon aria-hidden="true" className="size-3.5" />
+                {quick.label}
+              </button>
+            ))}
+          </nav>
         </div>
-        <nav aria-label="Quick links" className="flex items-center gap-1">
-          {[
-            { id: 'dashboard' as AppView, label: 'Analytics', icon: LayoutDashboard },
-            { id: 'earnings' as AppView, label: 'Payouts', icon: Wallet },
-          ].map((quick) => (
-            <button
-              key={quick.id}
-              type="button"
-              onClick={() => onNavigate(quick.id)}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-            >
-              <quick.icon aria-hidden="true" className="size-3.5" />
-              {quick.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      ) : null}
     </header>
   );
 }

@@ -208,7 +208,7 @@ const PHASE_ASSERTIONS = {
       { selector: '[data-testid="app-header"]', description: 'Header rendered' },
       { selector: '[data-testid="main-content"][data-active-view="explorer"]', description: 'Explorer is the default view' },
       { selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'Explorer grid rendered' },
-      { text: 'Gig Explorer', description: 'Explorer heading visible' },
+      { text: 'Marketplace', description: 'seller landing heading visible' },
     ],
     actions: [
       { type: 'assertPaddingBottom', selector: '[data-testid="main-content"]', minPadding: 80, description: 'content clears the fixed bottom navigation', maxWidth: 767 },
@@ -227,10 +227,10 @@ const PHASE_ASSERTIONS = {
       { type: 'assertNoSelector', selector: '[data-testid="notifications-count"]', description: 'unread badge cleared' },
       { type: 'press', key: 'Escape', description: 'dismiss the popover with Escape' },
       { type: 'waitForHidden', selector: '[data-testid="notifications-popover"]', description: 'popover closed' },
-      { type: 'click', selector: '[data-testid="mode-buyer"]', description: 'switch to buyer mode', minWidth: 640 },
-      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="buyer"]', description: 'buyer mode applied', minWidth: 640 },
-      { type: 'click', selector: '[data-testid="mode-seller"]', description: 'switch back to seller mode', minWidth: 640 },
-      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="seller"]', description: 'seller mode restored', minWidth: 640 },
+      { type: 'click', selector: '[data-testid="mode-buyer"]', description: 'switch to buyer mode' },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="buyer"]', description: 'buyer mode applied' },
+      { type: 'click', selector: '[data-testid="mode-seller"]', description: 'switch back to seller mode' },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="seller"]', description: 'seller mode restored' },
       { type: 'type', selector: '[data-testid="header-search"]', value: 'video', description: 'header search query', minWidth: 1024 },
       { type: 'wait', ms: 450, description: 'wait for the debounce' },
       { type: 'assertCount', selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 1, maxCount: 4, description: 'header search narrowed the grid', minWidth: 1024 },
@@ -241,7 +241,7 @@ const PHASE_ASSERTIONS = {
       { type: 'assertVisible', selector: '[data-testid="order-queue"]', description: 'order queue rendered (mobile)', maxWidth: 767 },
       { type: 'click', selector: '[data-testid="nav-orders"]', description: 'navigate to orders (desktop nav)', minWidth: 768 },
       { type: 'assertVisible', selector: '[data-testid="main-content"][data-active-view="orders"]', description: 'orders view active (desktop)', minWidth: 768 },
-      { type: 'assertCount', selector: '[data-testid="order-queue"] tbody tr', minCount: 5, description: 'full order ledger rows on desktop', minWidth: 1024 },
+      { type: 'assertCount', selector: '[data-testid="order-queue"] tbody tr', minCount: 3, maxCount: 3, description: 'seller-scoped order rows on desktop', minWidth: 1024 },
       { type: 'click', selector: '[data-testid="mobile-nav-earnings"]', description: 'navigate to earnings (mobile nav)', maxWidth: 767 },
       { type: 'assertVisible', selector: '[data-testid="earnings-view"]', description: 'earnings view active (mobile)', maxWidth: 767 },
       { type: 'click', selector: '[data-testid="nav-earnings"]', description: 'navigate to earnings (desktop nav)', minWidth: 768 },
@@ -280,53 +280,57 @@ const PHASE_ASSERTIONS = {
       { selector: '[data-testid="explorer-grid"] [data-gig-id]', minCount: 12, description: 'seed gigs rendered' },
     ],
     actions: [
-      // ---- SEC-01: object level authorization on the order lifecycle ----
+      // ---- ARCH-01: the seller workspace only lists what the seller fulfils ----
       { type: 'click', selector: '[data-testid="nav-orders"]', description: 'open the order queue (desktop)', minWidth: 768 },
       { type: 'click', selector: '[data-testid="mobile-nav-orders"]', description: 'open the order queue (mobile)', maxWidth: 767 },
-      { type: 'assertVisible', selector: '[data-testid="order-queue"]', description: 'order queue rendered' },
+      { type: 'assertVisible', selector: '[data-testid="order-queue"][data-audience="seller"]', description: 'queue rendered for the seller persona' },
+      { type: 'assertCount', selector: '[data-testid^="order-row-order-"]', minCount: 3, maxCount: 3, description: 'seller sees only their three active orders', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid^="order-card-order-"]', minCount: 3, maxCount: 3, description: 'seller sees only their three active orders', maxWidth: 767 },
+      { type: 'assertNoSelector', selector: '[data-testid="order-row-order-009"]', description: 'the seller queue excludes the account purchases', minWidth: 768 },
+      { type: 'assertNoSelector', selector: '[data-testid="order-card-order-009"]', description: 'the seller queue excludes the account purchases', maxWidth: 767 },
 
-      // A seller must never be able to approve their own delivery.
+      // ---- SEC-01: a seller can neither approve nor dispute its own work ----
+      { type: 'assertNoSelector', selector: '[data-testid="order-action-order-003"]', description: 'no self-approval CTA on a delivered seller order' },
+      { type: 'click', selector: '[data-testid="order-open-order-003"]', description: 'open a delivered seller order' },
+      { type: 'assertVisible', selector: '[data-testid="order-detail-panel"][data-audience="seller"]', description: 'seller order workspace opened' },
+      { type: 'assertNoSelector', selector: '[data-testid="order-detail-request-revision"]', description: 'sellers cannot request revisions on their own deliveries' },
+      { type: 'assertNoSelector', selector: '[data-testid="order-revision-order-003"]', description: 'no revision CTA rendered for the seller' },
+      { type: 'click', selector: '[data-testid="order-detail-close"]', description: 'close the order workspace' },
       {
         type: 'assertStorageField',
         key: STORAGE.orders,
         field: 'status',
         match: { id: 'order-003' },
-        save: true,
-        baseline: 'order-003-status',
-        description: 'capture the seller-owned delivery status',
+        expected: 'delivered',
+        description: 'the delivered order is untouched',
       },
-      { type: 'click', selector: '[data-testid="order-action-order-003"]', description: 'attempt to self-approve a delivered order' },
-      { type: 'assertVisible', selector: '[data-testid="toast"][data-tone="error"]', description: 'self-approval blocked with an error' },
-      {
-        type: 'assertStorageField',
-        key: STORAGE.orders,
-        field: 'status',
-        match: { id: 'order-003' },
-        baseline: 'order-003-status',
-        description: 'seller-owned delivery status is unchanged',
-      },
-      { type: 'dismissToasts', description: 'clear the toast queue' },
+      { type: 'click', selector: '[data-testid="order-open-order-001"]', description: 'open an in-progress seller order' },
+      { type: 'assertText', selector: '[data-testid="order-detail-primary-action"]', value: 'Deliver work', description: 'the seller is offered the fulfilment CTA' },
+      { type: 'click', selector: '[data-testid="order-detail-close"]', description: 'close the order workspace' },
 
-      // A buyer must never be able to drive the seller-side start of work.
-      {
-        type: 'assertStorageField',
-        key: STORAGE.orders,
-        field: 'status',
-        match: { id: 'order-010' },
-        save: true,
-        baseline: 'order-010-status',
-        description: 'capture the buyer purchase status',
-      },
-      { type: 'click', selector: '[data-testid="order-action-order-010"]', description: 'attempt a seller transition on a purchase' },
-      {
-        type: 'assertStorageField',
-        key: STORAGE.orders,
-        field: 'status',
-        match: { id: 'order-010' },
-        baseline: 'order-010-status',
-        description: 'purchase status is unchanged',
-      },
-      { type: 'dismissToasts', description: 'clear the toast queue' },
+      // ---- ARCH-01: the mode switcher re-projects navigation ----
+      { type: 'click', selector: '[data-testid="mode-buyer"]', description: 'switch to buyer mode' },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="buyer"]', description: 'buyer perspective applied' },
+      { type: 'assertVisible', selector: '[data-testid="header-nav"] [data-nav-mode="buyer"]', description: 'desktop navigation reprojected', minWidth: 768 },
+      { type: 'assertVisible', selector: '[data-testid="mobile-nav"][data-nav-mode="buyer"]', description: 'mobile navigation reprojected', maxWidth: 767 },
+      { type: 'assertNoSelector', selector: '[data-testid="nav-dashboard"]', description: 'buyer navigation drops seller management', minWidth: 768 },
+      { type: 'assertNoSelector', selector: '[data-testid="nav-earnings"]', description: 'buyer navigation drops seller earnings', minWidth: 768 },
+      { type: 'assertNoSelector', selector: '[data-testid="quick-dashboard"]', description: 'seller quick links are hidden from buyers', minWidth: 1024 },
+      { type: 'assertCount', selector: '[data-testid="nav-orders"]', minCount: 1, description: 'buyer navigation keeps purchases', minWidth: 768 },
+      { type: 'assertNoSelector', selector: '[data-testid="mobile-nav-earnings"]', description: 'buyer bottom navigation drops earnings', maxWidth: 767 },
+      { type: 'assertCount', selector: '[data-testid="mobile-nav-orders"]', minCount: 1, description: 'buyer bottom navigation keeps purchases', maxWidth: 767 },
+
+      // ---- ARCH-01: the buyer workspace lists only purchases ----
+      { type: 'assertVisible', selector: '[data-testid="order-queue"][data-audience="buyer"]', description: 'queue re-segmented for the buyer persona' },
+      { type: 'assertCount', selector: '[data-testid^="order-row-order-"]', minCount: 2, maxCount: 2, description: 'buyer sees only their two purchases', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid^="order-card-order-"]', minCount: 2, maxCount: 2, description: 'buyer sees only their two purchases', maxWidth: 767 },
+      { type: 'assertNoSelector', selector: '[data-testid="order-row-order-001"]', description: 'incoming orders are hidden from the buyer', minWidth: 768 },
+      { type: 'assertNoSelector', selector: '[data-testid="order-card-order-001"]', description: 'incoming orders are hidden from the buyer', maxWidth: 767 },
+
+      // ---- ARCH-01: buyers get approval CTAs, never fulfilment CTAs ----
+      { type: 'assertText', selector: '[data-testid="order-action-order-009"]', value: 'Approve & complete', description: 'buyer CTA is an approval' },
+      { type: 'assertTextAbsent', selector: '[data-testid="order-action-order-009"]', value: 'Deliver', description: 'buyer cannot see a deliver work CTA' },
+      { type: 'assertVisible', selector: '[data-testid="order-revision-order-009"]', description: 'buyer is offered the revision request' },
 
       // ---- FIN-01: revenue attribution ----
       { type: 'assertStorageField', key: STORAGE.profile, field: 'totalEarnedCents', save: true, baseline: 'earned', description: 'capture lifetime earnings' },
@@ -346,6 +350,51 @@ const PHASE_ASSERTIONS = {
       { type: 'assertStorageField', key: STORAGE.profile, field: 'pendingClearanceCents', baseline: 'pending', description: 'buyer clearance balance is untouched' },
       { type: 'assertStorageField', key: STORAGE.profile, field: 'completedOrdersCount', baseline: 'completed', description: 'buyer order count is untouched' },
       { type: 'assertStorageField', key: STORAGE.ledger, field: '__length', baseline: 'ledger', description: 'no ledger entry is appended for the buyer' },
+
+      // ---- ARCH-01: submitting requirements is a buyer-only action ----
+      // The toast stack sits above the modal footer on phones, so it is cleared
+      // before any dialog interaction is scripted.
+      { type: 'dismissToasts', description: 'clear the toast queue before the dialog' },
+      { type: 'assertText', selector: '[data-testid="order-action-order-010"]', value: 'Submit requirements', description: 'buyer CTA for a purchase awaiting requirements' },
+      { type: 'click', selector: '[data-testid="order-action-order-010"]', description: 'open the requirements dialog' },
+      { type: 'assertVisible', selector: '[data-testid="requirements-modal"]', description: 'requirements dialog opened' },
+      { type: 'click', selector: '[data-testid="requirements-submit"]', description: 'attempt to submit an empty questionnaire' },
+      { type: 'assertVisible', selector: '[data-testid="requirements-error"]', description: 'empty questionnaire rejected' },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-010' },
+        expected: 'pending_requirements',
+        description: 'the purchase is not released on an invalid submission',
+      },
+      { type: 'type', selector: '[data-testid="requirement-input-0"]', value: 'Portuguese to Brazilian Portuguese', description: 'answer the first requirement' },
+      { type: 'type', selector: '[data-testid="requirement-input-1"]', value: 'The legal copy is signed off by counsel.', description: 'answer the second requirement' },
+      { type: 'click', selector: '[data-testid="requirements-submit"]', description: 'submit the completed questionnaire' },
+      { type: 'waitForHidden', selector: '[data-testid="requirements-modal"]', description: 'requirements dialog closed' },
+      {
+        type: 'assertStorageField',
+        key: STORAGE.orders,
+        field: 'status',
+        match: { id: 'order-010' },
+        expected: 'in_progress',
+        description: 'the purchase is released to the seller',
+      },
+
+      // ---- ARCH-01: seller analytics stay out of the buyer account ----
+      { type: 'click', selector: '[data-testid="nav-profile"]', description: 'open the account view (desktop)', minWidth: 768 },
+      { type: 'click', selector: '[data-testid="mobile-nav-profile"]', description: 'open the account view (mobile)', maxWidth: 767 },
+      { type: 'assertVisible', selector: '[data-testid="profile-view"][data-profile-mode="buyer"]', description: 'buyer account rendered' },
+      { type: 'assertVisible', selector: '[data-testid="profile-purchases"]', description: 'purchase statistics rendered' },
+      { type: 'assertNoSelector', selector: '[data-testid="profile-tier"]', description: 'seller tier progression hidden from buyers' },
+      { type: 'assertTextAbsent', selector: '[data-testid="profile-view"]', value: 'Lifetime earnings', description: 'seller financials hidden from buyers' },
+
+      // ---- ARCH-01: switching back restores the seller perspective ----
+      { type: 'click', selector: '[data-testid="mode-seller"]', description: 'switch back to seller mode' },
+      { type: 'assertVisible', selector: '[data-testid="main-content"][data-seller-mode="seller"]', description: 'seller perspective restored' },
+      { type: 'assertCount', selector: '[data-testid="nav-dashboard"]', minCount: 1, description: 'seller management returns to the navigation', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="nav-earnings"]', minCount: 1, description: 'seller earnings return to the navigation', minWidth: 768 },
+      { type: 'assertCount', selector: '[data-testid="mobile-nav-earnings"]', minCount: 1, description: 'earnings returns to the bottom navigation', maxWidth: 767 },
 
       // ---- DATA-01: atomic commit and rollback ----
       { type: 'click', selector: '[data-testid="nav-explorer"]', description: 'back to the explorer (desktop)', minWidth: 768 },

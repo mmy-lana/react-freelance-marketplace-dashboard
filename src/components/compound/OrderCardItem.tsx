@@ -4,18 +4,17 @@ import { Badge, OrderStatusBadge } from '../primitives/Badge';
 import { PACKAGE_TIER_LABELS, ORDER_STATUS_TRANSITIONS, type OrderItem, type OrderStatus } from '../../types/marketplace';
 import { cn } from '../../utils/cn';
 import { formatCentsToUsd } from '../../utils/currency';
+import { canBuyerRequestRevision, resolvePrimaryTransition } from '../../context/MarketplaceContext';
 import { CountdownClock } from './CountdownClock';
-
-const PRIMARY_TRANSITION: Partial<Record<OrderStatus, { status: OrderStatus; label: string }>> = {
-  pending_requirements: { status: 'in_progress', label: 'Start work' },
-  in_progress: { status: 'delivered', label: 'Deliver work' },
-  delivered: { status: 'completed', label: 'Mark complete' },
-  revision: { status: 'delivered', label: 'Send revision' },
-};
 
 export interface OrderCardItemProps {
   order: OrderItem;
+  /** Persona the card is rendered for; drives which CTAs are offered. */
+  audience: 'seller' | 'buyer';
+  /** Counterparty shown to the current persona (buyer for sellers, seller for buyers). */
+  counterpartyName?: string;
   onTransition?: (orderId: string, status: OrderStatus) => void;
+  onRequestRevision?: (orderId: string) => void;
   onOpen?: (order: OrderItem) => void;
   /** Renders the CTA as a full-width block for thumb reach. */
   fullWidthAction?: boolean;
@@ -23,19 +22,24 @@ export interface OrderCardItemProps {
 }
 
 /**
- * Stacked mobile order card (< 768px): countdown badge, client identity,
+ * Stacked mobile order card (< 768px): countdown badge, counterparty identity,
  * commercial summary and a full-width primary action.
  */
 export function OrderCardItem({
   order,
+  audience,
+  counterpartyName,
   onTransition,
+  onRequestRevision,
   onOpen,
   fullWidthAction = true,
   className,
 }: OrderCardItemProps): React.JSX.Element {
-  const transition = PRIMARY_TRANSITION[order.status];
-  const canTransition = transition !== undefined && ORDER_STATUS_TRANSITIONS[order.status].includes(transition.status);
+  const transition = resolvePrimaryTransition(order, audience);
+  const canTransition = transition !== undefined;
+  const canRequestRevision = audience === 'buyer' && canBuyerRequestRevision(order);
   const unanswered = order.requirements.filter((requirement) => !requirement.isAnswered).length;
+  const isSellerView = audience === 'seller';
 
   return (
     <article
@@ -94,38 +98,65 @@ export function OrderCardItem({
 
       <div className="flex items-center justify-between gap-3 border-t border-slate-700/60 pt-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Avatar src={order.buyerAvatarUrl} name={order.buyerUsername} size="sm" presence="online" />
-          <div className="min-w-0">
-            <p className="truncate text-xs text-slate-400">Buyer</p>
-            <p className="truncate text-sm font-medium text-slate-200">{order.buyerUsername}</p>
-          </div>
+          {isSellerView ? (
+            <>
+              <Avatar src={order.buyerAvatarUrl} name={order.buyerUsername} size="sm" presence="online" />
+              <div className="min-w-0">
+                <p className="truncate text-xs text-slate-400">Buyer</p>
+                <p className="truncate text-sm font-medium text-slate-200">{order.buyerUsername}</p>
+              </div>
+            </>
+          ) : (
+            <div className="min-w-0">
+              <p className="truncate text-xs text-slate-400">Seller</p>
+              <p className="truncate text-sm font-medium text-slate-200">
+                {counterpartyName ?? 'Marketplace seller'}
+              </p>
+            </div>
+          )}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500">Order value</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">
+            {isSellerView ? 'Order value' : 'You paid'}
+          </p>
           <p className="tabular text-base font-bold text-white">{formatCentsToUsd(order.amountCents)}</p>
         </div>
       </div>
 
-      {canTransition && transition ? (
-        <button
-          type="button"
-          onClick={() => onTransition?.(order.id, transition.status)}
-          data-testid={`order-action-${order.id}`}
-          className={cn(
-            'inline-flex min-h-[48px] items-center justify-center gap-1 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-slate-950 transition-colors hover:bg-emerald-400',
-            fullWidthAction && 'w-full'
-          )}
-        >
-          {transition.label}
-          <ChevronRight aria-hidden="true" className="size-4" />
-        </button>
-      ) : (
-        <p className="rounded-xl bg-slate-900/60 px-4 py-3 text-center text-xs text-slate-500">
-          {ORDER_STATUS_TRANSITIONS[order.status].length === 0
-            ? 'This order has reached a terminal state.'
-            : 'No pending action for this order.'}
-        </p>
-      )}
+      <div className="flex flex-col gap-2">
+        {canRequestRevision ? (
+          <button
+            type="button"
+            onClick={() => onRequestRevision?.(order.id)}
+            data-testid={`order-revision-${order.id}`}
+            className="inline-flex min-h-[48px] w-full items-center justify-center gap-1 rounded-xl border border-amber-500/40 px-4 text-sm font-semibold text-amber-200 transition-colors hover:bg-amber-500/10"
+          >
+            <RefreshCcw aria-hidden="true" className="size-4" />
+            Request revision
+          </button>
+        ) : null}
+        {canTransition && transition ? (
+          <button
+            type="button"
+            onClick={() => onTransition?.(order.id, transition.status)}
+            data-testid={`order-action-${order.id}`}
+            className={cn(
+              'inline-flex min-h-[48px] items-center justify-center gap-1 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-slate-950 transition-colors hover:bg-emerald-400',
+              fullWidthAction && 'w-full'
+            )}
+          >
+            {transition.label}
+            <ChevronRight aria-hidden="true" className="size-4" />
+          </button>
+        ) : null}
+        {!canTransition && !canRequestRevision ? (
+          <p className="rounded-xl bg-slate-900/60 px-4 py-3 text-center text-xs text-slate-500">
+            {ORDER_STATUS_TRANSITIONS[order.status].length === 0
+              ? 'This order has reached a terminal state.'
+              : 'No pending action for this order.'}
+          </p>
+        ) : null}
+      </div>
     </article>
   );
 }
